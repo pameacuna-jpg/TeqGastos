@@ -2,10 +2,18 @@ package cl.teqmed.teqgastos.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// Colores corporativos inspirados en la identidad visual de TEQMED
+val TeqmedAzul = Color(0xFF176092)
+val TeqmedAzulOscuro = Color(0xFF124A73)
+val TeqmedAzulClaro = Color(0xFFEAF4FA)
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+val TeqmedVerde = Color(0xFF008A70)
+val TeqmedVerdeClaro = Color(0xFFE5F4F0)
+
+val FondoApp = Color(0xFFF7F9FB)
+val Blanco = Color(0xFFFFFFFF)
+
+val TextoPrincipal = Color(0xFF1F2937)
+val TextoSecundario = Color(0xFF667085)
+
+val ErrorRojo = Color(0xFFB3261E)

@@ -1,8 +1,14 @@
 package cl.teqmed.teqgastos.ui.gastoregistro
 
 data class GastoUiState(
-    val fecha: String = "",
+
+    // Información del gasto
+    val tipoDocumento: String = "",
+    val fechaDocumento: String = "",
     val monto: String = "",
-    val errorFecha: String? = null,
+
+    // Errores de validación
+    val errorTipoDocumento: String? = null,
+    val errorFechaDocumento: String? = null,
     val errorMonto: String? = null
 )
