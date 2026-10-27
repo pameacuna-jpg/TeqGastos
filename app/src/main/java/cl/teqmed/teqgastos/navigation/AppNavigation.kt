@@ -9,6 +9,8 @@ import cl.teqmed.teqgastos.ui.login.LoginScreen
 import cl.teqmed.teqgastos.ui.login.LoginViewModel
 import cl.teqmed.teqgastos.ui.proyecto.ProyectoScreen
 import cl.teqmed.teqgastos.ui.proyecto.ProyectoViewModel
+import cl.teqmed.teqgastos.ui.rendicion.RendicionScreen
+import cl.teqmed.teqgastos.ui.rendicion.RendicionViewModel
 
 @Composable
 fun AppNavigation() {
@@ -23,25 +25,39 @@ fun AppNavigation() {
         ProyectoViewModel()
     }
 
+    val rendicionViewModel = remember {
+        RendicionViewModel()
+    }
+
     NavHost(
         navController = navController,
         startDestination = "login"
     ) {
 
-        composable("login") {
+        composable(route = "login") {
 
             LoginScreen(
                 viewModel = loginViewModel,
                 onLoginCorrecto = {
-                    navController.navigate("proyecto")
+                    navController.navigate(route = "proyecto")
                 }
             )
         }
 
-        composable("proyecto") {
+        composable(route = "proyecto") {
 
             ProyectoScreen(
-                viewModel = proyectoViewModel
+                viewModel = proyectoViewModel,
+                onContinuar = {
+                    navController.navigate(route = "rendicion")
+                }
+            )
+        }
+
+        composable(route = "rendicion") {
+
+            RendicionScreen(
+                viewModel = rendicionViewModel
             )
         }
     }
