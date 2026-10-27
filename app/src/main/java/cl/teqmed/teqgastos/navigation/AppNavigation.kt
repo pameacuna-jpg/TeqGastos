@@ -5,12 +5,21 @@ import androidx.compose.runtime.remember
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+
 import cl.teqmed.teqgastos.ui.login.LoginScreen
 import cl.teqmed.teqgastos.ui.login.LoginViewModel
+
 import cl.teqmed.teqgastos.ui.proyecto.ProyectoScreen
 import cl.teqmed.teqgastos.ui.proyecto.ProyectoViewModel
+
 import cl.teqmed.teqgastos.ui.rendicion.RendicionScreen
 import cl.teqmed.teqgastos.ui.rendicion.RendicionViewModel
+
+import cl.teqmed.teqgastos.ui.fondorendir.FondoRendirScreen
+import cl.teqmed.teqgastos.ui.fondorendir.FondoRendirViewModel
+
+import cl.teqmed.teqgastos.ui.gastoregistro.GastoScreen
+import cl.teqmed.teqgastos.ui.gastoregistro.GastoViewModel
 
 @Composable
 fun AppNavigation() {
@@ -27,6 +36,14 @@ fun AppNavigation() {
 
     val rendicionViewModel = remember {
         RendicionViewModel()
+    }
+
+    val fondoRendirViewModel = remember {
+        FondoRendirViewModel()
+    }
+
+    val gastoViewModel = remember {
+        GastoViewModel()
     }
 
     NavHost(
@@ -57,7 +74,27 @@ fun AppNavigation() {
         composable(route = "rendicion") {
 
             RendicionScreen(
-                viewModel = rendicionViewModel
+                viewModel = rendicionViewModel,
+                onContinuar = {
+                    navController.navigate(route = "fondorendir")
+                }
+            )
+        }
+
+        composable(route = "fondorendir") {
+
+            FondoRendirScreen(
+                viewModel = fondoRendirViewModel,
+                onIngresarGasto = {
+                    navController.navigate(route = "gasto")
+                }
+            )
+        }
+
+        composable(route = "gasto") {
+
+            GastoScreen(
+                viewModel = gastoViewModel
             )
         }
     }

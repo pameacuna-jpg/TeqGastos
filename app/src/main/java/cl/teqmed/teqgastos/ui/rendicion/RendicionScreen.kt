@@ -15,7 +15,8 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun RendicionScreen(
-    viewModel: RendicionViewModel
+    viewModel: RendicionViewModel,
+    onContinuar: () -> Unit
 ) {
 
     val uiState = viewModel.uiState.collectAsState().value
@@ -62,7 +63,9 @@ fun RendicionScreen(
 
         Button(
             onClick = {
-                viewModel.validarTipo()
+                if (viewModel.validarTipo()) {
+                    onContinuar()
+                }
             }
         ) {
             Text(text = "Continuar")
