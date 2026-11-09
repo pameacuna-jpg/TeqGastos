@@ -1,6 +1,8 @@
 
 package cl.teqmed.teqgastos.ui.proyecto
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,8 +36,10 @@ private val TextoPrincipal = Color(0xFF173E56)
 @Composable
 fun ProyectoScreen(
     viewModel: ProyectoViewModel,
+    onVolver: () -> Unit,
     onContinuar: () -> Unit
 ) {
+    BackHandler { onVolver() }
     val uiState = viewModel.uiState.collectAsState().value
 
     BoxWithConstraints(
@@ -59,6 +63,11 @@ fun ProyectoScreen(
                 verticalArrangement = Arrangement.Center
             ) {
 
+                TextButton(onClick = onVolver) {
+                    Text("← Volver", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AzulTeqmed)
+                }
+                Spacer(Modifier.height(12.dp))
+
                 // Encabezado compacto
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -74,7 +83,7 @@ fun ProyectoScreen(
 
                     Text(
                         text = "TeqGastos",
-                        fontSize = 13.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = VerdeTeqmed
                     )
@@ -124,7 +133,7 @@ fun ProyectoScreen(
                     Text(
                         text = uiState.errorProyecto,
                         color = MaterialTheme.colorScheme.error,
-                        fontSize = 13.sp
+                        fontSize = 15.sp
                     )
                 }
 
@@ -232,7 +241,7 @@ fun ProyectoOpcion(
 
                 Text(
                     text = "Seleccionado",
-                    fontSize = 12.sp,
+                    fontSize = 14.sp,
                     color = VerdeTeqmed
                 )
             }

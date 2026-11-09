@@ -284,7 +284,7 @@ fun GastoScreen(
 
             Text(
                 text = "TeqGastos",
-                fontSize = 13.sp,
+                fontSize = 15.sp,
                 color = Verde
             )
         }
@@ -321,7 +321,7 @@ fun GastoScreen(
                         "Fondo por Rendir"
                     },
                     color = Color.Gray,
-                    fontSize = 13.sp
+                    fontSize = 15.sp
                 )
 
                 if (!esReembolso && tope > 0) {
@@ -329,7 +329,7 @@ fun GastoScreen(
                     Text(
                         "Tope referencial: $ ${formatoMoneda.format(tope)}",
                         color = Verde,
-                        fontSize = 13.sp
+                        fontSize = 15.sp
                     )
                 }
             }
@@ -432,7 +432,7 @@ fun GastoScreen(
                     Text(
                         "✓ Proveedor encontrado en registros anteriores",
                         color = Verde,
-                        fontSize = 12.sp
+                        fontSize = 14.sp
                     )
                 }
 
@@ -508,7 +508,7 @@ fun GastoScreen(
                     Text(
                         "Explique por qué fue necesario realizar este gasto.",
                         color = Color.Gray,
-                        fontSize = 13.sp
+                        fontSize = 15.sp
                     )
 
                     Spacer(Modifier.height(10.dp))
@@ -552,7 +552,7 @@ fun GastoScreen(
                 Text(
                     "Adjunte una fotografía de la boleta o factura.",
                     color = Color.Gray,
-                    fontSize = 13.sp
+                    fontSize = 15.sp
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -690,7 +690,7 @@ fun GastoScreen(
                 Text(
                     "Puedes registrar la ubicación donde realizaste el gasto.",
                     color = Color.Gray,
-                    fontSize = 13.sp
+                    fontSize = 15.sp
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -746,7 +746,7 @@ fun GastoScreen(
 
                 mensajeUbicacion?.let {
                     Spacer(Modifier.height(6.dp))
-                    Text(it, color = Texto, fontSize = 13.sp)
+                    Text(it, color = Texto, fontSize = 15.sp)
                 }
             }
         }

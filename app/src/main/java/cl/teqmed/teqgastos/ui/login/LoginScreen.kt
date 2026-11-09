@@ -98,7 +98,7 @@ fun LoginScreen(
 
                 Text(
                     text = "Ingresa con tu cuenta corporativa",
-                    fontSize = 13.sp,
+                    fontSize = 15.sp,
                     color = Color.Gray
                 )
 
@@ -198,7 +198,7 @@ fun LoginScreen(
 
         Text(
             text = "TEQMED · Soluciones que dan vida",
-            fontSize = 11.sp,
+            fontSize = 14.sp,
             color = Color.Gray,
             textAlign = TextAlign.Center
         )

@@ -19,9 +19,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 
 import cl.teqmed.teqgastos.data.local.GastoDatabaseProvider
+import cl.teqmed.teqgastos.data.local.RendicionEntity
 import cl.teqmed.teqgastos.data.local.toEntity
 import cl.teqmed.teqgastos.data.local.toUiState
 import kotlinx.coroutines.launch
+import cl.teqmed.teqgastos.ui.historial.HistorialRendicionesScreen
+import cl.teqmed.teqgastos.ui.historial.RendicionHistorialUi
 import cl.teqmed.teqgastos.ui.login.LoginScreen
 import cl.teqmed.teqgastos.ui.login.LoginViewModel
 import cl.teqmed.teqgastos.ui.proyecto.ProyectoScreen
@@ -36,6 +39,8 @@ import cl.teqmed.teqgastos.ui.gastoregistro.GastoUiState
 import cl.teqmed.teqgastos.ui.gastoregistro.GastoViewModel
 
 import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 private val Azul = Color(0xFF08638B)
@@ -45,6 +50,7 @@ private val Rojo = Color(0xFFB3261E)
 
 private data class GastoRegistrado(
     val id: Long,
+    val rendicionId: Long?,
     val proyecto: String,
     val tipoRendicion: String,
     val categoria: String,
@@ -67,10 +73,14 @@ fun AppNavigation() {
     val dao = remember(context) {
         GastoDatabaseProvider.obtenerDatabase(context).gastoDao()
     }
+    val rendicionDao = remember(context) {
+        GastoDatabaseProvider.obtenerDatabase(context).rendicionDao()
+    }
     val entidades by dao.obtenerTodos().collectAsState(initial = emptyList())
     val gastos = entidades.map { entidad ->
         GastoRegistrado(
             id = entidad.id,
+            rendicionId = entidad.rendicionId,
             proyecto = entidad.proyecto,
             tipoRendicion = entidad.tipoRendicion,
             categoria = entidad.categoria,
@@ -97,12 +107,21 @@ fun AppNavigation() {
         fondoRendirViewModel.uiState.collectAsState().value
 
     var tipoActual by remember { mutableStateOf("") }
+    var rendicionActualId by remember { mutableStateOf<Long?>(null) }
+    var mensajeError by remember { mutableStateOf<String?>(null) }
     var categoriaActual by remember { mutableStateOf("") }
 
     // Si es null, estamos registrando un gasto nuevo.
     // Si tiene un ID, estamos editando ese gasto.
     var idEditando by remember {
         mutableStateOf<Long?>(null)
+    }
+
+    suspend fun obtenerOCrearBorrador(proyecto: String, tipo: String): Long {
+        val existente = rendicionDao.obtenerBorrador(proyecto, tipo)
+        return existente?.id ?: rendicionDao.insertar(
+            RendicionEntity(proyecto = proyecto, tipoRendicion = tipo)
+        )
     }
 
     fun volver() {
@@ -126,7 +145,49 @@ fun AppNavigation() {
             LoginScreen(
                 viewModel = loginViewModel,
                 onLoginCorrecto = {
-                    navController.navigate("proyecto")
+                    val destino = if (loginViewModel.obtenerRol() == "SUPERVISOR") {
+                        "supervisor"
+                    } else {
+                        "inicio"
+                    }
+                    navController.navigate(destino) {
+                        popUpTo("login") { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        composable("inicio") {
+            PantallaInicio(
+                onNueva = { navController.navigate("proyecto") },
+                onHistorial = { navController.navigate("historial") },
+                onSalir = { navController.popBackStack() }
+            )
+        }
+
+        composable("supervisor") {
+            val rendiciones by rendicionDao.obtenerTodas()
+                .collectAsState(initial = emptyList())
+
+            PantallaSupervisor(
+                rendiciones = rendiciones,
+                gastos = gastos,
+                onVolver = {
+                    navController.popBackStack("login", inclusive = false)
+                },
+                onResolver = { rendicion, nuevoEstado, observacion ->
+                    scope.launch {
+                        val actual = rendicionDao.obtenerPorId(rendicion.id)
+                        if (actual?.estado == "PENDIENTE_ENVIO") {
+                            rendicionDao.actualizar(
+                                actual.copy(
+                                    estado = nuevoEstado,
+                                    observaciones = observacion
+                                )
+                            )
+                        }
+                    }
                 }
             )
         }
@@ -134,7 +195,10 @@ fun AppNavigation() {
         composable("proyecto") {
             ProyectoScreen(
                 viewModel = proyectoViewModel,
+                onVolver = { volver() },
                 onContinuar = {
+                    rendicionActualId = null
+                    mensajeError = null
                     navController.navigate("rendicion")
                 }
             )
@@ -143,21 +207,31 @@ fun AppNavigation() {
         composable("rendicion") {
             RendicionScreen(
                 viewModel = rendicionViewModel,
+                onVolver = { volver() },
                 onContinuar = {
-                    tipoActual = rendicionState.tipoSeleccionado
-
-                    when (tipoActual) {
-                        "Fondo por Rendir" ->
-                            navController.navigate("fondorendir")
-
-                        "Reembolso" ->
-                            navController.navigate("reembolso")
+                    val tipoElegido = rendicionState.tipoSeleccionado
+                    val proyectoElegido = proyectoState.proyectoSeleccionado
+                    if (tipoElegido == "Fondo por Rendir" || tipoElegido == "Reembolso") {
+                        scope.launch {
+                            tipoActual = tipoElegido
+                            rendicionActualId = obtenerOCrearBorrador(proyectoElegido, tipoElegido)
+                            mensajeError = null
+                            navController.navigate(
+                                if (tipoElegido == "Reembolso") "reembolso" else "fondorendir"
+                            )
+                        }
                     }
                 },
                 onVerGastosRegistrados = {
-                    tipoActual = rendicionState.tipoSeleccionado
-                    if (tipoActual == "Fondo por Rendir" || tipoActual == "Reembolso") {
-                        navController.navigate("resumen")
+                    val tipoElegido = rendicionState.tipoSeleccionado
+                    val proyectoElegido = proyectoState.proyectoSeleccionado
+                    if (tipoElegido == "Fondo por Rendir" || tipoElegido == "Reembolso") {
+                        scope.launch {
+                            tipoActual = tipoElegido
+                            rendicionActualId = obtenerOCrearBorrador(proyectoElegido, tipoElegido)
+                            mensajeError = null
+                            navController.navigate("resumen")
+                        }
                     }
                 }
             )
@@ -167,6 +241,7 @@ fun AppNavigation() {
             FondoRendirScreen(
                 viewModel = fondoRendirViewModel,
                 proyecto = proyectoState.proyectoSeleccionado,
+                onVolver = { volver() },
                 onIngresarGasto = {
                     tipoActual = "Fondo por Rendir"
                     categoriaActual =
@@ -237,21 +312,37 @@ fun AppNavigation() {
                     )
 
                     val idActual = idEditando
-
-                    val entidad = datosConfirmados.toEntity(
-                        id = idActual ?: 0L,
-                        proyecto = proyectoState.proyectoSeleccionado,
-                        tipoRendicion = tipoActual,
-                        categoria = categoriaActual
-                    )
-
+                    val rendicionId = rendicionActualId
                     scope.launch {
-                        if (idActual == null) {
-                            dao.insertar(entidad)
-                        } else {
-                            dao.actualizar(entidad)
+                        if (rendicionId == null) {
+                            mensajeError = "No se encontró la rendición activa."
+                            return@launch
                         }
+                        val rendicion = rendicionDao.obtenerPorId(rendicionId)
+                        if (rendicion?.estado != "BORRADOR") {
+                            mensajeError = "Esta rendición está cerrada y no admite cambios."
+                            irAlResumen()
+                            return@launch
+                        }
+                        if (idActual != null) {
+                            val anterior = dao.obtenerPorId(idActual)
+                            if (anterior?.rendicionId != rendicionId) {
+                                mensajeError = "El gasto no pertenece a esta rendición."
+                                irAlResumen()
+                                return@launch
+                            }
+                        }
+                        val entidad = datosConfirmados.toEntity(
+                            id = idActual ?: 0L,
+                            proyecto = proyectoState.proyectoSeleccionado,
+                            tipoRendicion = tipoActual,
+                            categoria = categoriaActual,
+                            rendicionId = rendicionId
+                        )
+                        if (idActual == null) dao.insertar(entidad)
+                        else dao.actualizar(entidad)
                         idEditando = null
+                        mensajeError = null
                         irAlResumen()
                     }
                 }
@@ -261,52 +352,115 @@ fun AppNavigation() {
         composable("resumen") {
 
             val gastosActuales = gastos.filter {
-                it.proyecto ==
-                        proyectoState.proyectoSeleccionado &&
-                        it.tipoRendicion == tipoActual
+                rendicionActualId != null && it.rendicionId == rendicionActualId
             }
+            val rendiciones by rendicionDao.obtenerTodas().collectAsState(initial = emptyList())
+            val rendicionActual = rendiciones.firstOrNull { it.id == rendicionActualId }
+            val editable = rendicionActual?.estado == "BORRADOR"
 
             ResumenGastosScreen(
                 gastos = gastosActuales,
                 proyecto = proyectoState.proyectoSeleccionado,
                 tipo = tipoActual,
+                editable = editable,
+                mensajeError = mensajeError,
 
                 onEditar = { gasto ->
-                    idEditando = gasto.id
-                    categoriaActual = gasto.categoria
-                    tipoActual = gasto.tipoRendicion
+                    if (editable && gasto.rendicionId == rendicionActualId) {
+                        idEditando = gasto.id
+                        categoriaActual = gasto.categoria
+                        tipoActual = gasto.tipoRendicion
 
-                    gastoViewModel.cargarGasto(gasto.datos)
+                        gastoViewModel.cargarGasto(gasto.datos)
 
-                    navController.navigate("gasto")
+                        navController.navigate("gasto")
+                    }
                 },
 
                 onEliminar = { gasto ->
                     scope.launch {
-                        dao.obtenerPorId(gasto.id)?.let { dao.eliminar(it) }
+                        val id = rendicionActualId
+                        val estado = id?.let { rendicionDao.obtenerPorId(it)?.estado }
+                        val actual = dao.obtenerPorId(gasto.id)
+                        if (estado == "BORRADOR" && actual?.rendicionId == id) {
+                            dao.eliminar(actual)
+                        } else {
+                            mensajeError = "No se puede eliminar un gasto de una rendición cerrada."
+                        }
                     }
                 },
 
                 onAgregar = {
-                    idEditando = null
-                    gastoViewModel.limpiarFormulario()
+                    if (editable) {
+                        idEditando = null
+                        gastoViewModel.limpiarFormulario()
 
-                    if (tipoActual == "Reembolso") {
-                        navController.navigate("reembolso")
-                    } else {
-                        navController.navigate("fondorendir")
+                        if (tipoActual == "Reembolso") {
+                            navController.navigate("reembolso")
+                        } else {
+                            navController.navigate("fondorendir")
+                        }
                     }
                 },
 
                 onFinalizar = {
-                    navController.navigate("finalizado")
+                    val id = rendicionActualId
+                    if (id != null && editable && gastosActuales.isNotEmpty()) {
+                        scope.launch {
+                            val resultado = rendicionDao.finalizarRendicion(
+                                id, System.currentTimeMillis()
+                            )
+                            if (resultado == 1) {
+                                mensajeError = null
+                                navController.navigate("finalizado") {
+                                    popUpTo("resumen") { inclusive = true }
+                                }
+                            } else {
+                                mensajeError = "No fue posible finalizar la rendición."
+                            }
+                        }
+                    }
                 },
 
                 onVolver = { volver() }
             )
         }
 
+        composable("historial") {
+            val rendicionesGuardadas by rendicionDao.obtenerTodas()
+                .collectAsState(initial = emptyList())
+
+            val formatoFecha = remember {
+                SimpleDateFormat("dd/MM/yyyy", Locale("es", "CL"))
+            }
+
+            val historial = rendicionesGuardadas.map { rendicion ->
+                val total = entidades
+                    .filter { it.rendicionId == rendicion.id }
+                    .sumOf { it.monto.toDoubleOrNull() ?: 0.0 }
+
+                RendicionHistorialUi(
+                    id = rendicion.id,
+                    proyecto = rendicion.proyecto,
+                    tipo = rendicion.tipoRendicion,
+                    fecha = if (rendicion.fechaCreacion > 0L) {
+                        formatoFecha.format(Date(rendicion.fechaCreacion))
+                    } else {
+                        "Fecha no disponible"
+                    },
+                    estado = rendicion.estado,
+                    total = total.toLong()
+                )
+            }.sortedByDescending { it.id }
+
+            HistorialRendicionesScreen(
+                rendiciones = historial,
+                onVolver = { volver() }
+            )
+        }
+
         composable("finalizado") {
+            BackHandler(enabled = true) { /* Evitar volver a editar una rendición cerrada */ }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -316,7 +470,7 @@ fun AppNavigation() {
             ) {
 
                 Text(
-                    "Rendición finalizada",
+                    "Rendición cerrada",
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = Verde
@@ -325,21 +479,33 @@ fun AppNavigation() {
                 Spacer(Modifier.height(12.dp))
 
                 Text(
-                    "Los gastos quedaron guardados en este dispositivo. " +
-                            "Aún no se han enviado a un servidor."
+                    "La rendición está pendiente de envío. " +
+                            "Sus gastos ya no se pueden modificar. " +
+                            "Todavía no se han enviado al servidor."
                 )
 
                 Spacer(Modifier.height(24.dp))
 
+                OutlinedButton(
+                    onClick = { navController.navigate("historial") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Ver historial de rendiciones")
+                }
+
+                Spacer(Modifier.height(12.dp))
+
                 Button(
                     onClick = {
                         tipoActual = ""
+                        rendicionActualId = null
+                        mensajeError = null
                         categoriaActual = ""
                         idEditando = null
                         gastoViewModel.limpiarFormulario()
 
-                        navController.navigate("proyecto") {
-                            popUpTo("proyecto") {
+                        navController.navigate("inicio") {
+                            popUpTo("inicio") {
                                 inclusive = true
                             }
                         }
@@ -358,6 +524,8 @@ private fun ResumenGastosScreen(
     gastos: List<GastoRegistrado>,
     proyecto: String,
     tipo: String,
+    editable: Boolean,
+    mensajeError: String?,
     onEditar: (GastoRegistrado) -> Unit,
     onEliminar: (GastoRegistrado) -> Unit,
     onAgregar: () -> Unit,
@@ -409,6 +577,15 @@ private fun ResumenGastosScreen(
         )
 
         Spacer(Modifier.height(16.dp))
+
+        if (!editable) {
+            Text("Rendición cerrada: solo lectura", color = Verde)
+            Spacer(Modifier.height(12.dp))
+        }
+        if (mensajeError != null) {
+            Text(mensajeError, color = Rojo)
+            Spacer(Modifier.height(12.dp))
+        }
 
         gastos.forEachIndexed { indice, gasto ->
 
@@ -470,7 +647,7 @@ private fun ResumenGastosScreen(
                     HorizontalDivider()
                     Spacer(Modifier.height(8.dp))
 
-                    Row(
+                    if (editable) Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement =
                             Arrangement.SpaceBetween
@@ -515,6 +692,7 @@ private fun ResumenGastosScreen(
 
         Button(
             onClick = onAgregar,
+            enabled = editable,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
@@ -529,7 +707,7 @@ private fun ResumenGastosScreen(
 
         OutlinedButton(
             onClick = onFinalizar,
-            enabled = gastos.isNotEmpty(),
+            enabled = editable && gastos.isNotEmpty(),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
@@ -579,6 +757,176 @@ private fun ResumenGastosScreen(
                 ) {
                     Text("Cancelar")
                 }
+            }
+        )
+    }
+}
+
+@Composable
+private fun PantallaInicio(
+    onNueva: () -> Unit,
+    onHistorial: () -> Unit,
+    onSalir: () -> Unit
+) {
+    BackHandler { onSalir() }
+    Column(
+        modifier = Modifier.fillMaxSize().background(Fondo)
+            .padding(horizontal = 24.dp, vertical = 42.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("TeqGastos", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Azul)
+        Spacer(Modifier.height(8.dp))
+        Text("Gestión de rendiciones de gastos", fontSize = 16.sp, color = Color(0xFF334155))
+        Spacer(Modifier.height(36.dp))
+        Button(onClick = onNueva, modifier = Modifier.fillMaxWidth().height(56.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Azul)) {
+            Text("Nueva rendición", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.height(16.dp))
+        OutlinedButton(onClick = onHistorial, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+            Text("Mis rendiciones", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Verde)
+        }
+        Spacer(Modifier.height(20.dp))
+        TextButton(onClick = onSalir, modifier = Modifier.fillMaxWidth()) {
+            Text("Volver al inicio de sesión", color = Azul, fontSize = 15.sp)
+        }
+    }
+}
+
+// Panel académico del supervisor. Los cambios se guardan en Room.
+@Composable
+private fun PantallaSupervisor(
+    rendiciones: List<RendicionEntity>,
+    gastos: List<GastoRegistrado>,
+    onVolver: () -> Unit,
+    onResolver: (RendicionEntity, String, String) -> Unit
+) {
+    BackHandler { onVolver() }
+
+    var seleccionada by remember { mutableStateOf<RendicionEntity?>(null) }
+    var observacion by remember { mutableStateOf("") }
+    var confirmarEstado by remember { mutableStateOf<String?>(null) }
+
+    val pendientes = rendiciones.filter { it.estado == "PENDIENTE_ENVIO" }
+        .sortedByDescending { it.id }
+    val formato = remember { NumberFormat.getNumberInstance(Locale("es", "CL")) }
+
+    Column(
+        modifier = Modifier.fillMaxSize().background(Fondo)
+            .verticalScroll(rememberScrollState()).padding(20.dp)
+    ) {
+        TextButton(onClick = {
+            if (seleccionada != null) {
+                seleccionada = null
+                observacion = ""
+            } else {
+                onVolver()
+            }
+        }) { Text("← Volver", color = Azul) }
+
+        Text(
+            if (seleccionada == null) "Panel del Supervisor"
+            else "Rendición N.º ${seleccionada?.id}",
+            fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Azul
+        )
+        Spacer(Modifier.height(8.dp))
+
+        if (seleccionada == null) {
+            Text("Rendiciones pendientes: ${pendientes.size}", color = Verde)
+            Spacer(Modifier.height(20.dp))
+            if (pendientes.isEmpty()) {
+                Text("No hay rendiciones pendientes de revisión.")
+            }
+            pendientes.forEach { rendicion ->
+                val total = gastos.filter { it.rendicionId == rendicion.id }
+                    .sumOf { it.datos.monto.toDoubleOrNull() ?: 0.0 }
+                Card(
+                    onClick = {
+                        seleccionada = rendicion
+                        observacion = ""
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Rendición N.º ${rendicion.id}",
+                            fontWeight = FontWeight.Bold, color = Azul)
+                        Text("${rendicion.proyecto} · ${rendicion.tipoRendicion}")
+                        Text("Total: $ ${formato.format(total)}",
+                            fontWeight = FontWeight.Bold, color = Verde)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Tocar para revisar", color = Azul)
+                    }
+                }
+            }
+        } else {
+            val rendicion = seleccionada!!
+            val gastosRendicion = gastos.filter { it.rendicionId == rendicion.id }
+            Text("Proyecto: ${rendicion.proyecto}")
+            Text("Tipo: ${rendicion.tipoRendicion}")
+            Spacer(Modifier.height(16.dp))
+            Text("Gastos registrados", fontWeight = FontWeight.Bold, color = Azul)
+            Spacer(Modifier.height(8.dp))
+            gastosRendicion.forEach { gasto ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text(gasto.categoria, fontWeight = FontWeight.Bold)
+                        Text("${gasto.datos.tipoDocumento} ${gasto.datos.numeroDocumento}")
+                        Text("Proveedor: ${gasto.datos.nombreProveedor}")
+                        Text("RUT: ${gasto.datos.rutEmisor}")
+                        Text("Monto: $ ${formato.format(gasto.datos.monto.toDoubleOrNull() ?: 0.0)}")
+                        if (gasto.datos.motivoReembolso.isNotBlank()) {
+                            Text("Motivo: ${gasto.datos.motivoReembolso}")
+                        }
+                    }
+                }
+            }
+            val total = gastosRendicion.sumOf {
+                it.datos.monto.toDoubleOrNull() ?: 0.0
+            }
+            Text("Total: $ ${formato.format(total)}",
+                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Azul)
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value = observacion,
+                onValueChange = { observacion = it },
+                label = { Text("Observación (obligatoria al rechazar)") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2
+            )
+            Spacer(Modifier.height(16.dp))
+            Button(
+                onClick = { confirmarEstado = "APROBADA" },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Verde)
+            ) { Text("Aprobar rendición") }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = { confirmarEstado = "RECHAZADA" },
+                enabled = observacion.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Rechazar rendición", color = Rojo) }
+        }
+    }
+
+    confirmarEstado?.let { estado ->
+        AlertDialog(
+            onDismissRequest = { confirmarEstado = null },
+            title = { Text(if (estado == "APROBADA") "Aprobar rendición" else "Rechazar rendición") },
+            text = { Text("¿Confirmas esta decisión? Se guardará en el historial.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    seleccionada?.let { onResolver(it, estado, observacion.trim()) }
+                    confirmarEstado = null
+                    seleccionada = null
+                    observacion = ""
+                }) { Text("Confirmar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmarEstado = null }) { Text("Cancelar") }
             }
         )
     }

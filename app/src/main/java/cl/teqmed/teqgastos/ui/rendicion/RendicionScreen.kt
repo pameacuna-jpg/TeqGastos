@@ -1,6 +1,8 @@
 package cl.teqmed.teqgastos.ui.rendicion
 
 import androidx.compose.foundation.Canvas
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,9 +36,11 @@ private val TextoPrincipal = Color(0xFF173E56)
 @Composable
 fun RendicionScreen(
     viewModel: RendicionViewModel,
+    onVolver: () -> Unit,
     onContinuar: () -> Unit,
     onVerGastosRegistrados: () -> Unit
 ) {
+    BackHandler { onVolver() }
     val uiState = viewModel.uiState.collectAsState().value
 
     BoxWithConstraints(
@@ -63,6 +67,11 @@ fun RendicionScreen(
                 verticalArrangement = Arrangement.Center
             ) {
 
+                TextButton(onClick = onVolver) {
+                    Text("← Volver", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AzulTeqmed)
+                }
+                Spacer(Modifier.height(12.dp))
+
                 // Encabezado
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -78,7 +87,7 @@ fun RendicionScreen(
 
                     Text(
                         text = "TeqGastos",
-                        fontSize = 13.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = VerdeTeqmed
                     )
@@ -123,7 +132,7 @@ fun RendicionScreen(
                     Text(
                         text = uiState.errorTipo,
                         color = MaterialTheme.colorScheme.error,
-                        fontSize = 13.sp
+                        fontSize = 15.sp
                     )
                 }
 
@@ -318,7 +327,7 @@ private fun TipoRendicionOpcion(
 
             Text(
                 text = descripcion,
-                fontSize = 12.sp,
+                fontSize = 14.sp,
                 color = Color.Gray
             )
 
@@ -327,7 +336,7 @@ private fun TipoRendicionOpcion(
 
                 Text(
                     text = "Seleccionado",
-                    fontSize = 12.sp,
+                    fontSize = 14.sp,
                     color = VerdeTeqmed
                 )
             }

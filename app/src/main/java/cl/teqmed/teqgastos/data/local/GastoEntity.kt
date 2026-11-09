@@ -9,6 +9,9 @@ data class GastoEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
 
+    // Identificador de la rendición a la que pertenece
+    val rendicionId: Long? = null,
+
     // Proyecto y clasificación
     val proyecto: String,
     val tipoRendicion: String,

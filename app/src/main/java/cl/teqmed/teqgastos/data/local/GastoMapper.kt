@@ -6,11 +6,13 @@ fun GastoUiState.toEntity(
     id: Long = 0,
     proyecto: String,
     tipoRendicion: String,
-    categoria: String
+    categoria: String,
+    rendicionId: Long? = null
 ): GastoEntity {
 
     return GastoEntity(
         id = id,
+        rendicionId = rendicionId,
         proyecto = proyecto,
         tipoRendicion = tipoRendicion,
         categoria = categoria,

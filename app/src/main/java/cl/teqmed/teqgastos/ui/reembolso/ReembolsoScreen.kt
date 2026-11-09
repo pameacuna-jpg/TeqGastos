@@ -91,7 +91,7 @@ fun ReembolsoScreen(
 
                 Text(
                     "TeqGastos",
-                    fontSize = 13.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Verde
                 )
@@ -121,7 +121,7 @@ fun ReembolsoScreen(
 
                     Text(
                         "Gasto excepcional",
-                        fontSize = 13.sp,
+                        fontSize = 15.sp,
                         color = Verde
                     )
                 }
@@ -199,7 +199,7 @@ fun ReembolsoScreen(
                 Text(
                     "Seleccione una categoría para continuar",
                     color = MaterialTheme.colorScheme.error,
-                    fontSize = 13.sp
+                    fontSize = 15.sp
                 )
             }
         }

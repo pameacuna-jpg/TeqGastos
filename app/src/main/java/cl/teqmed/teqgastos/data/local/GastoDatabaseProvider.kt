@@ -17,7 +17,10 @@ object GastoDatabaseProvider {
                 TeqGastosDatabase::class.java,
                 "teqgastos_database"
             )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3
+                )
                 .build()
                 .also {
                     instancia = it

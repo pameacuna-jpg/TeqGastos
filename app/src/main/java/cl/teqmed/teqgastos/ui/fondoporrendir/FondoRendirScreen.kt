@@ -1,6 +1,8 @@
 
 package cl.teqmed.teqgastos.ui.fondorendir
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,8 +38,10 @@ private val BordeNormal = Color(0xFFDEE6EB)
 fun FondoRendirScreen(
     viewModel: FondoRendirViewModel,
     proyecto: String,
-    onIngresarGasto: () -> Unit
+    onIngresarGasto: () -> Unit,
+    onVolver: () -> Unit
 ) {
+    BackHandler { onVolver() }
     val uiState = viewModel.uiState.collectAsState().value
 
     val formatoMoneda = NumberFormat.getNumberInstance(
@@ -54,6 +58,11 @@ fun FondoRendirScreen(
                 vertical = 24.dp
             )
     ) {
+
+        TextButton(onClick = onVolver) {
+            Text("← Volver", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AzulTeqmed)
+        }
+        Spacer(Modifier.height(12.dp))
 
         // Encabezado corporativo
         Row(

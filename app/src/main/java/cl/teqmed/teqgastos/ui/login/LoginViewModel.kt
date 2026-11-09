@@ -10,11 +10,10 @@ class LoginViewModel : ViewModel() {
 
     val uiState: StateFlow<LoginUiState> = _uiState
 
-
     fun onUsuarioChange(usuario: String) {
         _uiState.value = _uiState.value.copy(
-             usuario = usuario,
-             errorUsuario = null
+            usuario = usuario,
+            errorUsuario = null
         )
     }
 
@@ -24,16 +23,50 @@ class LoginViewModel : ViewModel() {
             errorPassword = null
         )
     }
+
     fun validarLogin(): Boolean {
 
-        val usuarioVacio = _uiState.value.usuario.isBlank()
-        val passwordVacio = _uiState.value.password.isBlank()
+        val usuario = _uiState.value.usuario.trim().lowercase()
+        val password = _uiState.value.password
+
+        val usuarioVacio = usuario.isBlank()
+        val passwordVacio = password.isBlank()
+
+        if (usuarioVacio || passwordVacio) {
+            _uiState.value = _uiState.value.copy(
+                errorUsuario = if (usuarioVacio)
+                    "Ingrese su usuario" else null,
+                errorPassword = if (passwordVacio)
+                    "Ingrese su contraseña" else null
+            )
+            return false
+        }
+
+        val credencialesValidas =
+            (usuario == "trabajador" && password == "1234") ||
+                    (usuario == "supervisor" && password == "1234")
+
+        if (!credencialesValidas) {
+            _uiState.value = _uiState.value.copy(
+                errorUsuario = "Usuario o contraseña incorrectos",
+                errorPassword = null
+            )
+            return false
+        }
 
         _uiState.value = _uiState.value.copy(
-            errorUsuario = if (usuarioVacio) "Ingrese su usuario" else null,
-            errorPassword = if (passwordVacio) "Ingrese su contraseña" else null
+            errorUsuario = null,
+            errorPassword = null
         )
 
-        return !usuarioVacio && !passwordVacio
+        return true
+    }
+
+    fun obtenerRol(): String {
+        return when (_uiState.value.usuario.trim().lowercase()) {
+            "supervisor" -> "SUPERVISOR"
+            "trabajador" -> "TRABAJADOR"
+            else -> ""
+        }
     }
 }
