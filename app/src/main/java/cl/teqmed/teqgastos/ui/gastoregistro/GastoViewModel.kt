@@ -1,4 +1,3 @@
-
 package cl.teqmed.teqgastos.ui.gastoregistro
 
 import androidx.lifecycle.ViewModel
@@ -70,7 +69,7 @@ class GastoViewModel : ViewModel() {
         )
     }
 
-    // NUEVO: asociar fotografía al gasto
+    // Asociar fotografía al gasto
     fun onComprobanteSeleccionado(uri: String) {
         _uiState.value = _uiState.value.copy(
             comprobanteUri = uri,
@@ -78,11 +77,37 @@ class GastoViewModel : ViewModel() {
         )
     }
 
-    // NUEVO: quitar fotografía seleccionada
+    // Quitar fotografía seleccionada
     fun quitarComprobante() {
         _uiState.value = _uiState.value.copy(
             comprobanteUri = "",
             errorComprobante = null
+        )
+    }
+
+    // NUEVO: registrar coordenadas geográficas
+    fun onUbicacionObtenida(
+        latitud: Double,
+        longitud: Double
+    ) {
+        if (
+            latitud.isFinite() &&
+            longitud.isFinite() &&
+            latitud in -90.0..90.0 &&
+            longitud in -180.0..180.0
+        ) {
+            _uiState.value = _uiState.value.copy(
+                latitud = latitud,
+                longitud = longitud
+            )
+        }
+    }
+
+    // NUEVO: quitar ubicación del gasto
+    fun quitarUbicacion() {
+        _uiState.value = _uiState.value.copy(
+            latitud = null,
+            longitud = null
         )
     }
 

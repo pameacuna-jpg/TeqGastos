@@ -1,7 +1,11 @@
-
 package cl.teqmed.teqgastos.ui.gastoregistro
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.Uri
+import androidx.core.os.CancellationSignal
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,7 +29,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.location.LocationManagerCompat
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.os.Build
@@ -69,6 +75,87 @@ fun GastoScreen(
     var advertirSalida by remember { mutableStateOf(false) }
     var uriFotoPendiente by remember { mutableStateOf<Uri?>(null) }
     var errorFoto by remember { mutableStateOf<String?>(null) }
+    var mensajeUbicacion by remember { mutableStateOf<String?>(null) }
+    var buscandoUbicacion by remember { mutableStateOf(false) }
+    var cancelacionUbicacion by remember { mutableStateOf<CancellationSignal?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose { cancelacionUbicacion?.cancel() }
+    }
+
+    fun obtenerUbicacion() {
+        val permisoPreciso = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val permisoAproximado = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!permisoPreciso && !permisoAproximado) {
+            mensajeUbicacion = "Debes autorizar el acceso a la ubicación"
+            return
+        }
+
+        val administrador = context.getSystemService(Context.LOCATION_SERVICE)
+                as LocationManager
+        val proveedor = when {
+            permisoPreciso && administrador.isProviderEnabled(LocationManager.GPS_PROVIDER) ->
+                LocationManager.GPS_PROVIDER
+            administrador.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ->
+                LocationManager.NETWORK_PROVIDER
+            else -> null
+        }
+
+        if (proveedor == null) {
+            mensajeUbicacion = "Activa la ubicación del dispositivo e inténtalo nuevamente"
+            return
+        }
+
+        cancelacionUbicacion?.cancel()
+        val cancelacion = CancellationSignal()
+        cancelacionUbicacion = cancelacion
+        buscandoUbicacion = true
+        mensajeUbicacion = "Buscando ubicación…"
+
+        try {
+            LocationManagerCompat.getCurrentLocation(
+                administrador,
+                proveedor,
+                cancelacion,
+                ContextCompat.getMainExecutor(context)
+            ) { ubicacion ->
+                buscandoUbicacion = false
+                cancelacionUbicacion = null
+                if (ubicacion != null) {
+                    viewModel.onUbicacionObtenida(
+                        ubicacion.latitude,
+                        ubicacion.longitude
+                    )
+                    mensajeUbicacion = "Ubicación obtenida correctamente"
+                } else {
+                    mensajeUbicacion = "No se pudo obtener la ubicación. Inténtalo nuevamente"
+                }
+            }
+        } catch (e: SecurityException) {
+            buscandoUbicacion = false
+            mensajeUbicacion = "No se concedió permiso de ubicación"
+        } catch (e: Exception) {
+            buscandoUbicacion = false
+            mensajeUbicacion = "No se pudo consultar la ubicación del dispositivo"
+        }
+    }
+
+    val permisosUbicacionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permisos ->
+        if (permisos[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            permisos[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        ) {
+            obtenerUbicacion()
+        } else {
+            mensajeUbicacion = "Permiso denegado. Puedes guardar el gasto sin ubicación"
+        }
+    }
 
     val calendario = rememberDatePickerState()
 
@@ -140,7 +227,8 @@ fun GastoScreen(
             estado.fechaDocumento.isNotBlank() ||
             estado.monto.isNotBlank() ||
             estado.motivoReembolso.isNotBlank() ||
-            estado.comprobanteUri.isNotBlank()
+            estado.comprobanteUri.isNotBlank() ||
+            estado.latitud != null || estado.longitud != null
 
     fun volver() {
         if (hayDatos) {
@@ -591,9 +679,75 @@ fun GastoScreen(
                 Spacer(Modifier.height(10.dp))
 
                 Text(
-                    "Ubicación: Pendiente de implementar",
+                    "Ubicación del gasto",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
                     color = Texto
                 )
+
+                Spacer(Modifier.height(6.dp))
+
+                Text(
+                    "Puedes registrar la ubicación donde realizaste el gasto.",
+                    color = Color.Gray,
+                    fontSize = 13.sp
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                Button(
+                    onClick = {
+                        val preciso = ContextCompat.checkSelfPermission(
+                            context, Manifest.permission.ACCESS_FINE_LOCATION
+                        ) == PackageManager.PERMISSION_GRANTED
+                        val aproximado = ContextCompat.checkSelfPermission(
+                            context, Manifest.permission.ACCESS_COARSE_LOCATION
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (preciso || aproximado) {
+                            obtenerUbicacion()
+                        } else {
+                            permisosUbicacionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                        }
+                    },
+                    enabled = !buscandoUbicacion,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Azul)
+                ) {
+                    Text(if (buscandoUbicacion) "Obteniendo ubicación…" else "Obtener ubicación")
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                if (estado.latitud != null && estado.longitud != null) {
+                    Text(
+                        "Latitud: ${"%.6f".format(Locale.US, estado.latitud)}",
+                        color = Verde
+                    )
+                    Text(
+                        "Longitud: ${"%.6f".format(Locale.US, estado.longitud)}",
+                        color = Verde
+                    )
+                    TextButton(onClick = {
+                        cancelacionUbicacion?.cancel()
+                        buscandoUbicacion = false
+                        viewModel.quitarUbicacion()
+                        mensajeUbicacion = null
+                    }) {
+                        Text("Quitar ubicación", color = Color(0xFFB3261E))
+                    }
+                } else {
+                    Text("Ubicación aún no registrada", color = Color.Gray)
+                }
+
+                mensajeUbicacion?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, color = Texto, fontSize = 13.sp)
+                }
             }
         }
 
@@ -678,6 +832,10 @@ fun GastoScreen(
                         Text("✓ Fotografía adjunta")
                     }
 
+                    if (estado.latitud != null && estado.longitud != null) {
+                        Text("✓ Ubicación registrada")
+                    }
+
                     if (esReembolso) {
                         Spacer(Modifier.height(8.dp))
                         Text("Motivo: ${estado.motivoReembolso}")
@@ -748,3 +906,4 @@ fun GastoScreen(
         )
     }
 }
+

@@ -1,4 +1,3 @@
-
 package cl.teqmed.teqgastos.ui.gastoregistro
 
 data class GastoUiState(
@@ -15,9 +14,11 @@ data class GastoUiState(
     val motivoReembolso: String = "",
 
     // Fotografía del comprobante
-    // Guarda la referencia URI de la imagen seleccionada
-    // o capturada con la cámara.
     val comprobanteUri: String = "",
+
+    // Geolocalización del gasto
+    val latitud: Double? = null,
+    val longitud: Double? = null,
 
     // Errores de validación
     val errorTipoDocumento: String? = null,

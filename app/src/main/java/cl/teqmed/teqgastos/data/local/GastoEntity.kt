@@ -1,4 +1,3 @@
-
 package cl.teqmed.teqgastos.data.local
 
 import androidx.room.Entity
@@ -27,5 +26,9 @@ data class GastoEntity(
     val motivoReembolso: String,
 
     // Fotografía del comprobante
-    val comprobanteUri: String = ""
+    val comprobanteUri: String = "",
+
+    // Geolocalización del gasto
+    val latitud: Double? = null,
+    val longitud: Double? = null
 )

@@ -1,4 +1,3 @@
-
 package cl.teqmed.teqgastos.data.local
 
 import cl.teqmed.teqgastos.ui.gastoregistro.GastoUiState
@@ -22,7 +21,9 @@ fun GastoUiState.toEntity(
         fechaDocumento = fechaDocumento,
         monto = monto,
         motivoReembolso = motivoReembolso,
-        comprobanteUri = comprobanteUri
+        comprobanteUri = comprobanteUri,
+        latitud = latitud,
+        longitud = longitud
     )
 }
 
@@ -36,6 +37,8 @@ fun GastoEntity.toUiState(): GastoUiState {
         fechaDocumento = fechaDocumento,
         monto = monto,
         motivoReembolso = motivoReembolso,
-        comprobanteUri = comprobanteUri
+        comprobanteUri = comprobanteUri,
+        latitud = latitud,
+        longitud = longitud
     )
 }

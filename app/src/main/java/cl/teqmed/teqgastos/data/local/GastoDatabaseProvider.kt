@@ -1,4 +1,3 @@
-
 package cl.teqmed.teqgastos.data.local
 
 import android.content.Context
@@ -10,14 +9,19 @@ object GastoDatabaseProvider {
     private var instancia: TeqGastosDatabase? = null
 
     fun obtenerDatabase(context: Context): TeqGastosDatabase {
+
         return instancia ?: synchronized(this) {
+
             instancia ?: Room.databaseBuilder(
                 context.applicationContext,
                 TeqGastosDatabase::class.java,
                 "teqgastos_database"
-            ).build().also {
-                instancia = it
-            }
+            )
+                .addMigrations(MIGRATION_1_2)
+                .build()
+                .also {
+                    instancia = it
+                }
         }
     }
 }
