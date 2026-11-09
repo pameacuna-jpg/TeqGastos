@@ -1,92 +1,108 @@
+
 package cl.teqmed.teqgastos.ui.login
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import cl.teqmed.teqgastos.ui.theme.TeqmedAzul
-import cl.teqmed.teqgastos.ui.theme.TeqmedAzulClaro
-import cl.teqmed.teqgastos.ui.theme.TeqmedVerde
+import cl.teqmed.teqgastos.R
+
+private val AzulTeqmed = Color(0xFF08638B)
+private val VerdeTeqmed = Color(0xFF008267)
+private val FondoTeqmed = Color(0xFFF5F8FA)
 
 @Composable
 fun LoginScreen(
     viewModel: LoginViewModel,
     onLoginCorrecto: () -> Unit
 ) {
-
     val uiState = viewModel.uiState.collectAsState().value
+
+    var mostrarPassword by remember {
+        mutableStateOf(false)
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .background(FondoTeqmed)
+            .verticalScroll(rememberScrollState())
+            .padding(
+                horizontal = 24.dp,
+                vertical = 24.dp
+            ),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
 
-        // Marca TEQMED
-        Text(
-            text = "TEQMED",
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Bold,
-            color = TeqmedAzul
+        // Logotipo oficial TEQMED
+        Image(
+            painter = painterResource(
+                id = R.drawable.teqmed_logo_brochure
+            ),
+            contentDescription = "Logotipo TEQMED",
+            modifier = Modifier
+                .fillMaxWidth(0.72f)
+                .height(90.dp),
+            contentScale = ContentScale.Fit
         )
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         Text(
             text = "TeqGastos",
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold,
-            color = TeqmedVerde
+            fontSize = 23.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = VerdeTeqmed
         )
 
-        Text(
-            text = "Rendición de gastos en terreno",
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(
-            modifier = Modifier.height(28.dp)
-        )
+        Spacer(modifier = Modifier.height(26.dp))
 
         Card(
             modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(
-                containerColor = TeqmedAzulClaro
+                containerColor = Color.White
+            ),
+            elevation = CardDefaults.cardElevation(
+                defaultElevation = 3.dp
             )
         ) {
-
             Column(
                 modifier = Modifier.padding(20.dp)
             ) {
 
                 Text(
-                    text = "Ingreso al sistema",
+                    text = "Bienvenido",
+                    fontSize = 23.sp,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
+                    color = AzulTeqmed
                 )
 
-                Spacer(
-                    modifier = Modifier.height(12.dp)
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "Ingresa con tu cuenta corporativa",
+                    fontSize = 13.sp,
+                    color = Color.Gray
                 )
+
+                Spacer(modifier = Modifier.height(24.dp))
 
                 OutlinedTextField(
                     value = uiState.usuario,
@@ -94,19 +110,22 @@ fun LoginScreen(
                         viewModel.onUsuarioChange(it)
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    label = {
-                        Text(text = "Usuario")
-                    },
+                    label = { Text("Usuario") },
                     singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
                     isError = uiState.errorUsuario != null,
                     supportingText = {
-                        if (uiState.errorUsuario != null) {
-                            Text(
-                                text = uiState.errorUsuario
-                            )
+                        uiState.errorUsuario?.let {
+                            Text(it)
                         }
-                    }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = AzulTeqmed,
+                        focusedLabelColor = AzulTeqmed
+                    )
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedTextField(
                     value = uiState.password,
@@ -114,45 +133,74 @@ fun LoginScreen(
                         viewModel.onPasswordChange(it)
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    label = {
-                        Text(text = "Contraseña")
-                    },
+                    label = { Text("Contraseña") },
                     singleLine = true,
-                    isError = uiState.errorPassword != null,
-                    supportingText = {
-                        if (uiState.errorPassword != null) {
+                    visualTransformation =
+                        if (mostrarPassword) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                    trailingIcon = {
+                        TextButton(
+                            onClick = {
+                                mostrarPassword = !mostrarPassword
+                            }
+                        ) {
                             Text(
-                                text = uiState.errorPassword
+                                text = if (mostrarPassword)
+                                    "Ocultar"
+                                else
+                                    "Ver",
+                                color = AzulTeqmed
                             )
                         }
-                    }
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    isError = uiState.errorPassword != null,
+                    supportingText = {
+                        uiState.errorPassword?.let {
+                            Text(it)
+                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = AzulTeqmed,
+                        focusedLabelColor = AzulTeqmed
+                    )
                 )
 
-                Spacer(
-                    modifier = Modifier.height(8.dp)
-                )
+                Spacer(modifier = Modifier.height(20.dp))
 
                 Button(
-                    modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         if (viewModel.validarLogin()) {
                             onLoginCorrecto()
                         }
-                    }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AzulTeqmed
+                    )
                 ) {
-                    Text(text = "Ingresar")
+                    Text(
+                        text = "Ingresar",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }
 
-        Spacer(
-            modifier = Modifier.height(20.dp)
-        )
+        Spacer(modifier = Modifier.height(24.dp))
 
         Text(
             text = "TEQMED · Soluciones que dan vida",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            fontSize = 11.sp,
+            color = Color.Gray,
+            textAlign = TextAlign.Center
         )
     }
 }

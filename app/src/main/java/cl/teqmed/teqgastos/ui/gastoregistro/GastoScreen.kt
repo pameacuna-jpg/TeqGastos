@@ -1,400 +1,611 @@
+
 package cl.teqmed.teqgastos.ui.gastoregistro
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import cl.teqmed.teqgastos.ui.theme.TeqmedAzul
-import cl.teqmed.teqgastos.ui.theme.TeqmedAzulClaro
-import cl.teqmed.teqgastos.ui.theme.TeqmedVerde
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
+private val Azul = Color(0xFF08638B)
+private val Verde = Color(0xFF008267)
+private val Fondo = Color(0xFFF5F8FA)
+private val Texto = Color(0xFF173E56)
+
+private fun normalizarRut(rut: String): String {
+    return rut.uppercase(Locale.ROOT)
+        .replace(".", "")
+        .replace("-", "")
+        .replace(" ", "")
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GastoScreen(
     viewModel: GastoViewModel,
     categoria: String,
-    proyecto: String
+    proyecto: String,
+    esReembolso: Boolean = false,
+    buscarProveedor: (String) -> String? = { null },
+    onVolver: () -> Unit = {},
+    onConfirmar: (GastoUiState) -> Unit = {}
 ) {
-
-    val uiState = viewModel.uiState.collectAsState().value
+    val estado = viewModel.uiState.collectAsState().value
 
     var mostrarCalendario by remember {
         mutableStateOf(false)
     }
 
-    val datePickerState = rememberDatePickerState()
+    var mostrarConfirmacion by remember {
+        mutableStateOf(false)
+    }
+
+    var advertirSalida by remember {
+        mutableStateOf(false)
+    }
+
+    val calendario = rememberDatePickerState()
+
+    val proveedorEncontrado =
+        buscarProveedor(normalizarRut(estado.rutEmisor))
+
+    LaunchedEffect(
+        estado.rutEmisor,
+        proveedorEncontrado
+    ) {
+        if (
+            proveedorEncontrado != null &&
+            estado.nombreProveedor != proveedorEncontrado
+        ) {
+            viewModel.onNombreProveedorChange(
+                proveedorEncontrado
+            )
+        }
+    }
+
+    val hayDatos = estado.tipoDocumento.isNotBlank() ||
+            estado.numeroDocumento.isNotBlank() ||
+            estado.rutEmisor.isNotBlank() ||
+            estado.nombreProveedor.isNotBlank() ||
+            estado.fechaDocumento.isNotBlank() ||
+            estado.monto.isNotBlank() ||
+            estado.motivoReembolso.isNotBlank()
+
+    fun volver() {
+        if (hayDatos) {
+            advertirSalida = true
+        } else {
+            onVolver()
+        }
+    }
+
+    BackHandler {
+        volver()
+    }
 
     val formatoMoneda = NumberFormat.getNumberInstance(
         Locale("es", "CL")
     )
 
-    // Tope según la categoría seleccionada
-    val topeAutorizado = when (categoria) {
-
+    val tope = when (categoria) {
         "Estacionamiento" -> 30000
-
         "Peajes" -> 50000
-
         "Alimentación" -> 50000
-
         "Materiales" -> 100000
-
         else -> 0
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(20.dp)
+            .background(Fondo)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
     ) {
 
-        // ENCABEZADO
+        TextButton(onClick = { volver() }) {
+            Text("← Volver", color = Azul)
+        }
 
-        Text(
-            text = "TEQMED",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = TeqmedAzul
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (esReembolso) {
+                    "Registrar reembolso"
+                } else {
+                    "Registrar gasto"
+                },
+                fontSize = 23.sp,
+                fontWeight = FontWeight.Bold,
+                color = Azul
+            )
 
-        Text(
-            text = "TeqGastos",
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = TeqmedVerde
-        )
+            Text(
+                text = "TeqGastos",
+                fontSize = 13.sp,
+                color = Verde
+            )
+        }
 
-        Text(
-            text = "Rendición de gastos en terreno",
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(
-            modifier = Modifier.height(20.dp)
-        )
-
-        Text(
-            text = "Registrar gasto",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        Spacer(
-            modifier = Modifier.height(14.dp)
-        )
-
-        // INFORMACIÓN DEL FXR
+        Spacer(Modifier.height(16.dp))
 
         Card(
-            modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = TeqmedAzulClaro
-            )
+                containerColor = Color.White
+            ),
+            shape = RoundedCornerShape(16.dp)
         ) {
-
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
+            Column(Modifier.padding(16.dp)) {
 
                 Text(
                     text = proyecto,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = Texto
                 )
 
-                Text(
-                    text = "FXR N.º 0001"
-                )
-
-                Spacer(
-                    modifier = Modifier.height(8.dp)
-                )
-
-                Text(
-                    text = "Categoría",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Spacer(Modifier.height(8.dp))
 
                 Text(
                     text = categoria,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TeqmedAzul
+                    fontWeight = FontWeight.SemiBold,
+                    color = Verde
                 )
 
-                Spacer(
-                    modifier = Modifier.height(4.dp)
-                )
+                Spacer(Modifier.height(6.dp))
 
                 Text(
-                    text = "Tope autorizado: $ ${
-                        formatoMoneda.format(topeAutorizado)
-                    }",
+                    text = if (esReembolso) {
+                        "Gasto excepcional sujeto a revisión"
+                    } else {
+                        "Fondo por Rendir"
+                    },
+                    color = Color.Gray,
+                    fontSize = 13.sp
+                )
+
+                if (!esReembolso && tope > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Tope referencial: $ ${
+                            formatoMoneda.format(tope)
+                        }",
+                        color = Verde,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White
+            ),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(Modifier.padding(16.dp)) {
+
+                Text(
+                    "Documento",
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = TeqmedVerde
+                    color = Texto
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    listOf("Boleta", "Factura").forEach { tipo ->
+
+                        val seleccionado =
+                            estado.tipoDocumento == tipo
+
+                        Card(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    viewModel
+                                        .onTipoDocumentoSeleccionado(tipo)
+                                },
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (seleccionado) {
+                                    Color(0xFFE9F5F3)
+                                } else {
+                                    Fondo
+                                }
+                            )
+                        ) {
+                            Text(
+                                text = tipo,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                color = if (seleccionado) Verde else Texto,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
+                estado.errorTipoDocumento?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = estado.numeroDocumento,
+                    onValueChange =
+                        viewModel::onNumeroDocumentoChange,
+                    label = { Text("Número de documento") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError =
+                        estado.errorNumeroDocumento != null,
+                    supportingText = {
+                        estado.errorNumeroDocumento?.let {
+                            Text(it)
+                        }
+                    }
+                )
+
+                OutlinedTextField(
+                    value = estado.rutEmisor,
+                    onValueChange = { rut ->
+                        viewModel.onRutEmisorChange(rut)
+
+                        val encontrado =
+                            buscarProveedor(normalizarRut(rut))
+
+                        if (encontrado != null) {
+                            viewModel.onNombreProveedorChange(
+                                encontrado
+                            )
+                        } else if (proveedorEncontrado != null) {
+                            // Evita conservar el proveedor anterior
+                            // cuando se cambia a otro RUT
+                            viewModel.onNombreProveedorChange("")
+                        }
+                    },
+                    label = { Text("RUT del proveedor") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = estado.errorRutEmisor != null,
+                    supportingText = {
+                        estado.errorRutEmisor?.let {
+                            Text(it)
+                        }
+                    }
+                )
+
+                if (proveedorEncontrado != null) {
+                    Spacer(Modifier.height(4.dp))
+
+                    Text(
+                        "✓ Proveedor encontrado en registros anteriores",
+                        color = Verde,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                OutlinedTextField(
+                    value = estado.nombreProveedor,
+                    onValueChange =
+                        viewModel::onNombreProveedorChange,
+                    label = {
+                        Text("Razón social del proveedor")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    readOnly = proveedorEncontrado != null,
+                    isError =
+                        estado.errorNombreProveedor != null,
+                    supportingText = {
+                        estado.errorNombreProveedor?.let {
+                            Text(it)
+                        }
+                    }
+                )
+
+                Spacer(Modifier.height(10.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        mostrarCalendario = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (estado.fechaDocumento.isBlank()) {
+                            "Seleccionar fecha del documento"
+                        } else {
+                            estado.fechaDocumento
+                        }
+                    )
+                }
+
+                estado.errorFechaDocumento?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = estado.monto,
+                    onValueChange = viewModel::onMontoChange,
+                    label = { Text("Monto del gasto ($)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number
+                    ),
+                    singleLine = true,
+                    isError = estado.errorMonto != null,
+                    supportingText = {
+                        estado.errorMonto?.let {
+                            Text(it)
+                        }
+                    }
                 )
             }
         }
 
-        Spacer(
-            modifier = Modifier.height(16.dp)
-        )
+        if (esReembolso) {
+            Spacer(Modifier.height(14.dp))
 
-        // TIPO DE DOCUMENTO
-
-        Text(
-            text = "Tipo de documento",
-            fontWeight = FontWeight.Bold
-        )
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-
-            RadioButton(
-                selected = uiState.tipoDocumento == "Boleta",
-                onClick = {
-                    viewModel.onTipoDocumentoSeleccionado(
-                        "Boleta"
-                    )
-                }
-            )
-
-            Text(text = "Boleta")
-
-            RadioButton(
-                selected = uiState.tipoDocumento == "Factura",
-                onClick = {
-                    viewModel.onTipoDocumentoSeleccionado(
-                        "Factura"
-                    )
-                }
-            )
-
-            Text(text = "Factura")
-        }
-
-        if (uiState.errorTipoDocumento != null) {
-
-            Text(
-                text = uiState.errorTipoDocumento,
-                color = MaterialTheme.colorScheme.error,
-                fontSize = 13.sp
-            )
-        }
-
-        Spacer(
-            modifier = Modifier.height(8.dp)
-        )
-
-        // FECHA DEL DOCUMENTO
-
-        Text(
-            text = "Fecha del documento",
-            fontWeight = FontWeight.Bold
-        )
-
-        Spacer(
-            modifier = Modifier.height(6.dp)
-        )
-
-        Button(
-            onClick = {
-                mostrarCalendario = true
-            }
-        ) {
-
-            Text(
-                text = if (uiState.fechaDocumento.isBlank()) {
-                    "Seleccionar fecha"
-                } else {
-                    uiState.fechaDocumento
-                }
-            )
-        }
-
-        if (uiState.errorFechaDocumento != null) {
-
-            Text(
-                text = uiState.errorFechaDocumento,
-                color = MaterialTheme.colorScheme.error,
-                fontSize = 13.sp
-            )
-        }
-
-        Spacer(
-            modifier = Modifier.height(10.dp)
-        )
-
-        // MONTO
-
-        OutlinedTextField(
-            value = uiState.monto,
-            onValueChange = {
-                viewModel.onMontoChange(it)
-            },
-            modifier = Modifier.fillMaxWidth(),
-            label = {
-                Text(text = "Monto")
-            },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Number
-            ),
-            singleLine = true,
-            isError = uiState.errorMonto != null,
-            supportingText = {
-
-                if (uiState.errorMonto != null) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White
+                ),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(Modifier.padding(16.dp)) {
 
                     Text(
-                        text = uiState.errorMonto
+                        "Justificación del reembolso",
+                        fontWeight = FontWeight.Bold,
+                        color = Texto,
+                        fontSize = 17.sp
+                    )
+
+                    Spacer(Modifier.height(6.dp))
+
+                    Text(
+                        "Explique por qué fue necesario realizar este gasto.",
+                        color = Color.Gray,
+                        fontSize = 13.sp
+                    )
+
+                    Spacer(Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = estado.motivoReembolso,
+                        onValueChange =
+                            viewModel::onMotivoReembolsoChange,
+                        label = {
+                            Text("Motivo obligatorio")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        maxLines = 5,
+                        isError =
+                            estado.errorMotivoReembolso != null,
+                        supportingText = {
+                            estado.errorMotivoReembolso?.let {
+                                Text(it)
+                            }
+                        }
                     )
                 }
             }
-        )
+        }
 
-        // COMPROBANTE
+        Spacer(Modifier.height(14.dp))
 
-        Text(
-            text = "Comprobante",
-            fontWeight = FontWeight.Bold
-        )
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White
+            ),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Text(
+                    "Comprobante: Pendiente de implementar",
+                    color = Texto
+                )
 
-        Text(
-            text = "Fotografía pendiente",
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+                Spacer(Modifier.height(10.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(10.dp))
 
-        Spacer(
-            modifier = Modifier.height(8.dp)
-        )
+                Text(
+                    "Ubicación: Pendiente de implementar",
+                    color = Texto
+                )
+            }
+        }
 
-        // UBICACIÓN
-
-        Text(
-            text = "Ubicación",
-            fontWeight = FontWeight.Bold
-        )
-
-        Text(
-            text = "Ubicación pendiente",
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(
-            modifier = Modifier.height(16.dp)
-        )
-
-        // GUARDAR
+        Spacer(Modifier.height(20.dp))
 
         Button(
+            onClick = {
+                if (viewModel.validarGasto(esReembolso)) {
+                    mostrarConfirmacion = true
+                }
+            },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp),
-            onClick = {
-
-                viewModel.validarGasto()
-            }
+                .height(52.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Azul
+            ),
+            shape = RoundedCornerShape(12.dp)
         ) {
-
             Text(
-                text = "Guardar gasto",
-                fontWeight = FontWeight.Bold
+                "Validar gasto",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold
             )
         }
+
+        Spacer(Modifier.height(20.dp))
     }
 
-    // CALENDARIO
-
     if (mostrarCalendario) {
-
         DatePickerDialog(
             onDismissRequest = {
                 mostrarCalendario = false
             },
-
             confirmButton = {
-
                 TextButton(
                     onClick = {
-
-                        val fechaSeleccionada =
-                            datePickerState.selectedDateMillis
-
-                        if (fechaSeleccionada != null) {
-
+                        calendario.selectedDateMillis?.let {
                             val formato = SimpleDateFormat(
                                 "dd/MM/yyyy",
                                 Locale.getDefault()
                             )
 
-                            val fechaFormateada =
-                                formato.format(
-                                    Date(fechaSeleccionada)
-                                )
+                            formato.timeZone =
+                                TimeZone.getTimeZone("UTC")
 
                             viewModel.onFechaDocumentoChange(
-                                fechaFormateada
+                                formato.format(Date(it))
                             )
                         }
 
                         mostrarCalendario = false
                     }
                 ) {
-
-                    Text(text = "Aceptar")
+                    Text("Aceptar")
                 }
             },
-
             dismissButton = {
-
                 TextButton(
                     onClick = {
                         mostrarCalendario = false
                     }
                 ) {
-
-                    Text(text = "Cancelar")
+                    Text("Cancelar")
                 }
             }
         ) {
-
-            DatePicker(
-                state = datePickerState
-            )
+            DatePicker(state = calendario)
         }
+    }
+
+    if (mostrarConfirmacion) {
+        AlertDialog(
+            onDismissRequest = {
+                mostrarConfirmacion = false
+            },
+            title = {
+                Text("Confirmar gasto")
+            },
+            text = {
+                Column {
+                    Text("Categoría: $categoria")
+                    Text("Proveedor: ${estado.nombreProveedor}")
+                    Text("Monto: $ ${estado.monto}")
+
+                    if (esReembolso) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Motivo: ${estado.motivoReembolso}"
+                        )
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    Text(
+                        "¿Desea confirmar este registro?"
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        mostrarConfirmacion = false
+                        onConfirmar(estado.copy())
+                    }
+                ) {
+                    Text("Confirmar", color = Verde)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        mostrarConfirmacion = false
+                    }
+                ) {
+                    Text("Editar")
+                }
+            }
+        )
+    }
+
+    if (advertirSalida) {
+        AlertDialog(
+            onDismissRequest = {
+                advertirSalida = false
+            },
+            title = {
+                Text("Volver a la pantalla anterior")
+            },
+            text = {
+                Text(
+                    "Hay información ingresada. " +
+                            "Si vuelve, los cambios aún no confirmados " +
+                            "podrían perderse."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        advertirSalida = false
+                        onVolver()
+                    }
+                ) {
+                    Text("Volver")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        advertirSalida = false
+                    }
+                ) {
+                    Text("Seguir editando")
+                }
+            }
+        )
     }
 }
