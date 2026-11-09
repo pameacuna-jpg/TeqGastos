@@ -70,7 +70,23 @@ class GastoViewModel : ViewModel() {
         )
     }
 
-    // NUEVO: cargar los datos de un gasto para editarlo
+    // NUEVO: asociar fotografía al gasto
+    fun onComprobanteSeleccionado(uri: String) {
+        _uiState.value = _uiState.value.copy(
+            comprobanteUri = uri,
+            errorComprobante = null
+        )
+    }
+
+    // NUEVO: quitar fotografía seleccionada
+    fun quitarComprobante() {
+        _uiState.value = _uiState.value.copy(
+            comprobanteUri = "",
+            errorComprobante = null
+        )
+    }
+
+    // Recuperar datos originales al editar un gasto
     fun cargarGasto(gasto: GastoUiState) {
         _uiState.value = gasto.copy(
             errorTipoDocumento = null,
@@ -79,12 +95,12 @@ class GastoViewModel : ViewModel() {
             errorNombreProveedor = null,
             errorFechaDocumento = null,
             errorMonto = null,
-            errorMotivoReembolso = null
+            errorMotivoReembolso = null,
+            errorComprobante = null
         )
     }
 
     // Validar formulario
-    // esReembolso indica si el motivo es obligatorio
     fun validarGasto(esReembolso: Boolean = false): Boolean {
 
         val estado = _uiState.value
@@ -153,7 +169,7 @@ class GastoViewModel : ViewModel() {
             else -> null
         }
 
-        // Solo se exige motivo para reembolsos
+        // Motivo obligatorio solo para reembolsos
         val motivo = estado.motivoReembolso.trim()
 
         val errorMotivoReembolso = when {
@@ -168,6 +184,9 @@ class GastoViewModel : ViewModel() {
             else -> null
         }
 
+        // Fotografía opcional en esta etapa
+        val errorComprobante: String? = null
+
         _uiState.value = estado.copy(
             errorTipoDocumento = errorTipoDocumento,
             errorNumeroDocumento = errorNumeroDocumento,
@@ -175,7 +194,8 @@ class GastoViewModel : ViewModel() {
             errorNombreProveedor = errorNombreProveedor,
             errorFechaDocumento = errorFechaDocumento,
             errorMonto = errorMonto,
-            errorMotivoReembolso = errorMotivoReembolso
+            errorMotivoReembolso = errorMotivoReembolso,
+            errorComprobante = errorComprobante
         )
 
         return errorTipoDocumento == null &&
@@ -184,7 +204,8 @@ class GastoViewModel : ViewModel() {
                 errorNombreProveedor == null &&
                 errorFechaDocumento == null &&
                 errorMonto == null &&
-                errorMotivoReembolso == null
+                errorMotivoReembolso == null &&
+                errorComprobante == null
     }
 
     // Limpiar formulario para registrar otro gasto

@@ -14,6 +14,11 @@ data class GastoUiState(
     // Información del reembolso
     val motivoReembolso: String = "",
 
+    // Fotografía del comprobante
+    // Guarda la referencia URI de la imagen seleccionada
+    // o capturada con la cámara.
+    val comprobanteUri: String = "",
+
     // Errores de validación
     val errorTipoDocumento: String? = null,
     val errorNumeroDocumento: String? = null,
@@ -21,5 +26,8 @@ data class GastoUiState(
     val errorNombreProveedor: String? = null,
     val errorFechaDocumento: String? = null,
     val errorMonto: String? = null,
-    val errorMotivoReembolso: String? = null
+    val errorMotivoReembolso: String? = null,
+
+    // Error relacionado con el comprobante
+    val errorComprobante: String? = null
 )

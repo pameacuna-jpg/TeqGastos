@@ -1,7 +1,11 @@
 
 package cl.teqmed.teqgastos.ui.gastoregistro
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,10 +18,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
+import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
+import android.os.Build
+import android.provider.MediaStore
+import java.io.File
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -48,21 +61,65 @@ fun GastoScreen(
     onVolver: () -> Unit = {},
     onConfirmar: (GastoUiState) -> Unit = {}
 ) {
+    val context = LocalContext.current
     val estado = viewModel.uiState.collectAsState().value
 
-    var mostrarCalendario by remember {
-        mutableStateOf(false)
-    }
-
-    var mostrarConfirmacion by remember {
-        mutableStateOf(false)
-    }
-
-    var advertirSalida by remember {
-        mutableStateOf(false)
-    }
+    var mostrarCalendario by remember { mutableStateOf(false) }
+    var mostrarConfirmacion by remember { mutableStateOf(false) }
+    var advertirSalida by remember { mutableStateOf(false) }
+    var uriFotoPendiente by remember { mutableStateOf<Uri?>(null) }
+    var errorFoto by remember { mutableStateOf<String?>(null) }
 
     val calendario = rememberDatePickerState()
+
+    // Cámara: guarda una fotografía completa en un archivo interno
+    val camaraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { tomada ->
+        val uri = uriFotoPendiente
+
+        if (tomada && uri != null) {
+            viewModel.onComprobanteSeleccionado(uri.toString())
+            errorFoto = null
+        } else {
+            errorFoto = "No se capturó ninguna fotografía"
+        }
+
+        uriFotoPendiente = null
+    }
+
+    // Galería: utiliza el selector de fotografías de Android
+    val galeriaLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val carpeta = File(context.filesDir, "comprobantes")
+                if (!carpeta.exists()) carpeta.mkdirs()
+
+                val archivo = File(
+                    carpeta,
+                    "comprobante_${System.currentTimeMillis()}.jpg"
+                )
+
+                context.contentResolver.openInputStream(uri)?.use { entrada ->
+                    archivo.outputStream().use { salida ->
+                        entrada.copyTo(salida)
+                    }
+                } ?: throw IllegalStateException(
+                    "No se pudo abrir la imagen seleccionada"
+                )
+
+                viewModel.onComprobanteSeleccionado(
+                    Uri.fromFile(archivo).toString()
+                )
+                errorFoto = null
+
+            } catch (e: Exception) {
+                errorFoto = "No se pudo guardar la imagen seleccionada"
+            }
+        }
+    }
 
     val proveedorEncontrado =
         buscarProveedor(normalizarRut(estado.rutEmisor))
@@ -72,9 +129,7 @@ fun GastoScreen(
             proveedorEncontrado != null &&
             estado.nombreProveedor != proveedorEncontrado
         ) {
-            viewModel.onNombreProveedorChange(
-                proveedorEncontrado
-            )
+            viewModel.onNombreProveedorChange(proveedorEncontrado)
         }
     }
 
@@ -84,7 +139,8 @@ fun GastoScreen(
             estado.nombreProveedor.isNotBlank() ||
             estado.fechaDocumento.isNotBlank() ||
             estado.monto.isNotBlank() ||
-            estado.motivoReembolso.isNotBlank()
+            estado.motivoReembolso.isNotBlank() ||
+            estado.comprobanteUri.isNotBlank()
 
     fun volver() {
         if (hayDatos) {
@@ -94,9 +150,7 @@ fun GastoScreen(
         }
     }
 
-    BackHandler {
-        volver()
-    }
+    BackHandler { volver() }
 
     val formatoMoneda = NumberFormat.getNumberInstance(
         Locale("es", "CL")
@@ -156,7 +210,6 @@ fun GastoScreen(
             shape = RoundedCornerShape(16.dp)
         ) {
             Column(Modifier.padding(16.dp)) {
-
                 Text(
                     proyecto,
                     fontWeight = FontWeight.Bold,
@@ -186,9 +239,7 @@ fun GastoScreen(
                 if (!esReembolso && tope > 0) {
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "Tope referencial: $ ${
-                            formatoMoneda.format(tope)
-                        }",
+                        "Tope referencial: $ ${formatoMoneda.format(tope)}",
                         color = Verde,
                         fontSize = 13.sp
                     )
@@ -219,7 +270,6 @@ fun GastoScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     listOf("Boleta", "Factura").forEach { tipo ->
-
                         val seleccionado =
                             estado.tipoDocumento == tipo
 
@@ -227,8 +277,7 @@ fun GastoScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clickable {
-                                    viewModel
-                                        .onTipoDocumentoSeleccionado(tipo)
+                                    viewModel.onTipoDocumentoSeleccionado(tipo)
                                 },
                             colors = CardDefaults.cardColors(
                                 containerColor = if (seleccionado) {
@@ -243,11 +292,7 @@ fun GastoScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(14.dp),
-                                color = if (seleccionado) {
-                                    Verde
-                                } else {
-                                    Texto
-                                },
+                                color = if (seleccionado) Verde else Texto,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
@@ -255,27 +300,20 @@ fun GastoScreen(
                 }
 
                 estado.errorTipoDocumento?.let {
-                    Text(
-                        it,
-                        color = MaterialTheme.colorScheme.error
-                    )
+                    Text(it, color = MaterialTheme.colorScheme.error)
                 }
 
                 Spacer(Modifier.height(12.dp))
 
                 OutlinedTextField(
                     value = estado.numeroDocumento,
-                    onValueChange =
-                        viewModel::onNumeroDocumentoChange,
+                    onValueChange = viewModel::onNumeroDocumentoChange,
                     label = { Text("Número de documento") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    isError =
-                        estado.errorNumeroDocumento != null,
+                    isError = estado.errorNumeroDocumento != null,
                     supportingText = {
-                        estado.errorNumeroDocumento?.let {
-                            Text(it)
-                        }
+                        estado.errorNumeroDocumento?.let { Text(it) }
                     }
                 )
 
@@ -288,9 +326,7 @@ fun GastoScreen(
                             buscarProveedor(normalizarRut(rut))
 
                         if (encontrado != null) {
-                            viewModel.onNombreProveedorChange(
-                                encontrado
-                            )
+                            viewModel.onNombreProveedorChange(encontrado)
                         } else if (proveedorEncontrado != null) {
                             viewModel.onNombreProveedorChange("")
                         }
@@ -300,64 +336,46 @@ fun GastoScreen(
                     singleLine = true,
                     isError = estado.errorRutEmisor != null,
                     supportingText = {
-                        estado.errorRutEmisor?.let {
-                            Text(it)
-                        }
+                        estado.errorRutEmisor?.let { Text(it) }
                     }
                 )
 
                 if (proveedorEncontrado != null) {
-                    Spacer(Modifier.height(4.dp))
-
                     Text(
                         "✓ Proveedor encontrado en registros anteriores",
                         color = Verde,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
+                        fontSize = 12.sp
                     )
                 }
 
                 OutlinedTextField(
                     value = estado.nombreProveedor,
-                    onValueChange =
-                        viewModel::onNombreProveedorChange,
-                    label = {
-                        Text("Razón social del proveedor")
-                    },
+                    onValueChange = viewModel::onNombreProveedorChange,
+                    label = { Text("Razón social del proveedor") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     readOnly = proveedorEncontrado != null,
-                    isError =
-                        estado.errorNombreProveedor != null,
+                    isError = estado.errorNombreProveedor != null,
                     supportingText = {
-                        estado.errorNombreProveedor?.let {
-                            Text(it)
-                        }
+                        estado.errorNombreProveedor?.let { Text(it) }
                     }
                 )
 
                 Spacer(Modifier.height(10.dp))
 
                 OutlinedButton(
-                    onClick = {
-                        mostrarCalendario = true
-                    },
+                    onClick = { mostrarCalendario = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        if (estado.fechaDocumento.isBlank()) {
+                        estado.fechaDocumento.ifBlank {
                             "Seleccionar fecha del documento"
-                        } else {
-                            estado.fechaDocumento
                         }
                     )
                 }
 
                 estado.errorFechaDocumento?.let {
-                    Text(
-                        it,
-                        color = MaterialTheme.colorScheme.error
-                    )
+                    Text(it, color = MaterialTheme.colorScheme.error)
                 }
 
                 Spacer(Modifier.height(10.dp))
@@ -373,9 +391,7 @@ fun GastoScreen(
                     singleLine = true,
                     isError = estado.errorMonto != null,
                     supportingText = {
-                        estado.errorMonto?.let {
-                            Text(it)
-                        }
+                        estado.errorMonto?.let { Text(it) }
                     }
                 )
             }
@@ -411,20 +427,14 @@ fun GastoScreen(
 
                     OutlinedTextField(
                         value = estado.motivoReembolso,
-                        onValueChange =
-                            viewModel::onMotivoReembolsoChange,
-                        label = {
-                            Text("Motivo obligatorio")
-                        },
+                        onValueChange = viewModel::onMotivoReembolsoChange,
+                        label = { Text("Motivo obligatorio") },
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3,
                         maxLines = 5,
-                        isError =
-                            estado.errorMotivoReembolso != null,
+                        isError = estado.errorMotivoReembolso != null,
                         supportingText = {
-                            estado.errorMotivoReembolso?.let {
-                                Text(it)
-                            }
+                            estado.errorMotivoReembolso?.let { Text(it) }
                         }
                     )
                 }
@@ -433,6 +443,7 @@ fun GastoScreen(
 
         Spacer(Modifier.height(14.dp))
 
+        // NUEVA SECCIÓN: FOTOGRAFÍA DEL COMPROBANTE
         Card(
             colors = CardDefaults.cardColors(
                 containerColor = Color.White
@@ -440,12 +451,142 @@ fun GastoScreen(
             shape = RoundedCornerShape(16.dp)
         ) {
             Column(Modifier.padding(16.dp)) {
+
                 Text(
-                    "Comprobante: Pendiente de implementar",
+                    "Fotografía del comprobante",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
                     color = Texto
                 )
 
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(6.dp))
+
+                Text(
+                    "Adjunte una fotografía de la boleta o factura.",
+                    color = Color.Gray,
+                    fontSize = 13.sp
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                Button(
+                    onClick = {
+                        try {
+                            val carpeta = File(
+                                context.filesDir,
+                                "comprobantes"
+                            )
+
+                            if (!carpeta.exists()) {
+                                carpeta.mkdirs()
+                            }
+
+                            val archivo = File(
+                                carpeta,
+                                "comprobante_${System.currentTimeMillis()}.jpg"
+                            )
+
+                            val uri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                archivo
+                            )
+
+                            uriFotoPendiente = uri
+                            camaraLauncher.launch(uri)
+
+                        } catch (e: Exception) {
+                            errorFoto = "No se pudo abrir la cámara"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Azul
+                    )
+                ) {
+                    Text("Tomar fotografía")
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        galeriaLauncher.launch("image/*")
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Seleccionar desde galería")
+                }
+
+                if (estado.comprobanteUri.isNotBlank()) {
+
+                    Spacer(Modifier.height(12.dp))
+
+                    val imagen = remember(estado.comprobanteUri) {
+                        try {
+                            val uri = Uri.parse(estado.comprobanteUri)
+
+                            val bitmap = if (
+                                Build.VERSION.SDK_INT >=
+                                Build.VERSION_CODES.P
+                            ) {
+                                val source =
+                                    ImageDecoder.createSource(
+                                        context.contentResolver,
+                                        uri
+                                    )
+                                ImageDecoder.decodeBitmap(source)
+                            } else {
+                                context.contentResolver
+                                    .openInputStream(uri)?.use {
+                                        BitmapFactory.decodeStream(it)
+                                    }
+                            }
+
+                            bitmap?.asImageBitmap()
+
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+
+                    if (imagen != null) {
+                        Image(
+                            bitmap = imagen,
+                            contentDescription = "Comprobante adjunto",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    } else {
+                        Text(
+                            "No se pudo mostrar la fotografía",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    TextButton(
+                        onClick = {
+                            viewModel.quitarComprobante()
+                        }
+                    ) {
+                        Text(
+                            "Quitar fotografía",
+                            color = Color(0xFFB3261E)
+                        )
+                    }
+                }
+
+                errorFoto?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(10.dp))
 
@@ -473,11 +614,7 @@ fun GastoScreen(
             shape = RoundedCornerShape(12.dp)
         ) {
             Text(
-                if (esEdicion) {
-                    "Guardar cambios"
-                } else {
-                    "Validar gasto"
-                },
+                if (esEdicion) "Guardar cambios" else "Validar gasto",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -488,9 +625,7 @@ fun GastoScreen(
 
     if (mostrarCalendario) {
         DatePickerDialog(
-            onDismissRequest = {
-                mostrarCalendario = false
-            },
+            onDismissRequest = { mostrarCalendario = false },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -499,7 +634,6 @@ fun GastoScreen(
                                 "dd/MM/yyyy",
                                 Locale.getDefault()
                             )
-
                             formato.timeZone =
                                 TimeZone.getTimeZone("UTC")
 
@@ -507,7 +641,6 @@ fun GastoScreen(
                                 formato.format(Date(it))
                             )
                         }
-
                         mostrarCalendario = false
                     }
                 ) {
@@ -516,9 +649,7 @@ fun GastoScreen(
             },
             dismissButton = {
                 TextButton(
-                    onClick = {
-                        mostrarCalendario = false
-                    }
+                    onClick = { mostrarCalendario = false }
                 ) {
                     Text("Cancelar")
                 }
@@ -530,16 +661,11 @@ fun GastoScreen(
 
     if (mostrarConfirmacion) {
         AlertDialog(
-            onDismissRequest = {
-                mostrarConfirmacion = false
-            },
+            onDismissRequest = { mostrarConfirmacion = false },
             title = {
                 Text(
-                    if (esEdicion) {
-                        "Confirmar cambios"
-                    } else {
-                        "Confirmar gasto"
-                    }
+                    if (esEdicion) "Confirmar cambios"
+                    else "Confirmar gasto"
                 )
             },
             text = {
@@ -548,11 +674,13 @@ fun GastoScreen(
                     Text("Proveedor: ${estado.nombreProveedor}")
                     Text("Monto: $ ${estado.monto}")
 
+                    if (estado.comprobanteUri.isNotBlank()) {
+                        Text("✓ Fotografía adjunta")
+                    }
+
                     if (esReembolso) {
                         Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Motivo: ${estado.motivoReembolso}"
-                        )
+                        Text("Motivo: ${estado.motivoReembolso}")
                     }
 
                     Spacer(Modifier.height(10.dp))
@@ -581,9 +709,7 @@ fun GastoScreen(
             },
             dismissButton = {
                 TextButton(
-                    onClick = {
-                        mostrarConfirmacion = false
-                    }
+                    onClick = { mostrarConfirmacion = false }
                 ) {
                     Text("Volver al formulario")
                 }
@@ -593,12 +719,8 @@ fun GastoScreen(
 
     if (advertirSalida) {
         AlertDialog(
-            onDismissRequest = {
-                advertirSalida = false
-            },
-            title = {
-                Text("Volver a la pantalla anterior")
-            },
+            onDismissRequest = { advertirSalida = false },
+            title = { Text("Volver a la pantalla anterior") },
             text = {
                 Text(
                     "Hay información ingresada. " +
@@ -618,9 +740,7 @@ fun GastoScreen(
             },
             dismissButton = {
                 TextButton(
-                    onClick = {
-                        advertirSalida = false
-                    }
+                    onClick = { advertirSalida = false }
                 ) {
                     Text("Seguir editando")
                 }
