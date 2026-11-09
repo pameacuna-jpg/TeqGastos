@@ -43,6 +43,7 @@ fun GastoScreen(
     categoria: String,
     proyecto: String,
     esReembolso: Boolean = false,
+    esEdicion: Boolean = false,
     buscarProveedor: (String) -> String? = { null },
     onVolver: () -> Unit = {},
     onConfirmar: (GastoUiState) -> Unit = {}
@@ -66,10 +67,7 @@ fun GastoScreen(
     val proveedorEncontrado =
         buscarProveedor(normalizarRut(estado.rutEmisor))
 
-    LaunchedEffect(
-        estado.rutEmisor,
-        proveedorEncontrado
-    ) {
+    LaunchedEffect(estado.rutEmisor, proveedorEncontrado) {
         if (
             proveedorEncontrado != null &&
             estado.nombreProveedor != proveedorEncontrado
@@ -130,7 +128,9 @@ fun GastoScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (esReembolso) {
+                text = if (esEdicion) {
+                    "Editar gasto"
+                } else if (esReembolso) {
                     "Registrar reembolso"
                 } else {
                     "Registrar gasto"
@@ -158,7 +158,7 @@ fun GastoScreen(
             Column(Modifier.padding(16.dp)) {
 
                 Text(
-                    text = proyecto,
+                    proyecto,
                     fontWeight = FontWeight.Bold,
                     color = Texto
                 )
@@ -166,7 +166,7 @@ fun GastoScreen(
                 Spacer(Modifier.height(8.dp))
 
                 Text(
-                    text = categoria,
+                    categoria,
                     fontWeight = FontWeight.SemiBold,
                     color = Verde
                 )
@@ -174,7 +174,7 @@ fun GastoScreen(
                 Spacer(Modifier.height(6.dp))
 
                 Text(
-                    text = if (esReembolso) {
+                    if (esReembolso) {
                         "Gasto excepcional sujeto a revisión"
                     } else {
                         "Fondo por Rendir"
@@ -186,7 +186,7 @@ fun GastoScreen(
                 if (!esReembolso && tope > 0) {
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "Tope referencial: $ ${
+                        "Tope referencial: $ ${
                             formatoMoneda.format(tope)
                         }",
                         color = Verde,
@@ -239,11 +239,15 @@ fun GastoScreen(
                             )
                         ) {
                             Text(
-                                text = tipo,
+                                tipo,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(14.dp),
-                                color = if (seleccionado) Verde else Texto,
+                                color = if (seleccionado) {
+                                    Verde
+                                } else {
+                                    Texto
+                                },
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
@@ -288,8 +292,6 @@ fun GastoScreen(
                                 encontrado
                             )
                         } else if (proveedorEncontrado != null) {
-                            // Evita conservar el proveedor anterior
-                            // cuando se cambia a otro RUT
                             viewModel.onNombreProveedorChange("")
                         }
                     },
@@ -471,7 +473,11 @@ fun GastoScreen(
             shape = RoundedCornerShape(12.dp)
         ) {
             Text(
-                "Validar gasto",
+                if (esEdicion) {
+                    "Guardar cambios"
+                } else {
+                    "Validar gasto"
+                },
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -528,7 +534,13 @@ fun GastoScreen(
                 mostrarConfirmacion = false
             },
             title = {
-                Text("Confirmar gasto")
+                Text(
+                    if (esEdicion) {
+                        "Confirmar cambios"
+                    } else {
+                        "Confirmar gasto"
+                    }
+                )
             },
             text = {
                 Column {
@@ -546,7 +558,11 @@ fun GastoScreen(
                     Spacer(Modifier.height(10.dp))
 
                     Text(
-                        "¿Desea confirmar este registro?"
+                        if (esEdicion) {
+                            "¿Desea guardar los cambios realizados?"
+                        } else {
+                            "¿Desea confirmar este registro?"
+                        }
                     )
                 }
             },
@@ -557,7 +573,10 @@ fun GastoScreen(
                         onConfirmar(estado.copy())
                     }
                 ) {
-                    Text("Confirmar", color = Verde)
+                    Text(
+                        if (esEdicion) "Guardar" else "Confirmar",
+                        color = Verde
+                    )
                 }
             },
             dismissButton = {
@@ -566,7 +585,7 @@ fun GastoScreen(
                         mostrarConfirmacion = false
                     }
                 ) {
-                    Text("Editar")
+                    Text("Volver al formulario")
                 }
             }
         )

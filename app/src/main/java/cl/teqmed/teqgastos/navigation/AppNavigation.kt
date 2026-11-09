@@ -28,6 +28,7 @@ import cl.teqmed.teqgastos.ui.fondorendir.FondoRendirScreen
 import cl.teqmed.teqgastos.ui.fondorendir.FondoRendirViewModel
 import cl.teqmed.teqgastos.ui.reembolso.ReembolsoScreen
 import cl.teqmed.teqgastos.ui.gastoregistro.GastoScreen
+import cl.teqmed.teqgastos.ui.gastoregistro.GastoUiState
 import cl.teqmed.teqgastos.ui.gastoregistro.GastoViewModel
 
 import java.text.NumberFormat
@@ -36,16 +37,14 @@ import java.util.Locale
 private val Azul = Color(0xFF08638B)
 private val Verde = Color(0xFF008267)
 private val Fondo = Color(0xFFF5F8FA)
+private val Rojo = Color(0xFFB3261E)
 
 private data class GastoRegistrado(
+    val id: Long,
     val proyecto: String,
     val tipoRendicion: String,
     val categoria: String,
-    val documento: String,
-    val rutProveedor: String,
-    val proveedor: String,
-    val monto: Double,
-    val motivo: String
+    val datos: GastoUiState
 )
 
 private fun normalizarRut(rut: String): String {
@@ -78,6 +77,16 @@ fun AppNavigation() {
     var tipoActual by remember { mutableStateOf("") }
     var categoriaActual by remember { mutableStateOf("") }
 
+    // Si es null, estamos registrando un gasto nuevo.
+    // Si tiene un ID, estamos editando ese gasto.
+    var idEditando by remember {
+        mutableStateOf<Long?>(null)
+    }
+
+    var siguienteId by remember {
+        mutableLongStateOf(1L)
+    }
+
     val gastos = remember {
         mutableStateListOf<GastoRegistrado>()
     }
@@ -88,6 +97,14 @@ fun AppNavigation() {
 
     fun volver() {
         navController.popBackStack()
+    }
+
+    fun irAlResumen() {
+        navController.navigate("resumen") {
+            popUpTo("resumen") {
+                inclusive = true
+            }
+        }
     }
 
     NavHost(
@@ -139,7 +156,9 @@ fun AppNavigation() {
                     categoriaActual =
                         fondoState.categoriaSeleccionada
 
+                    idEditando = null
                     gastoViewModel.limpiarFormulario()
+
                     navController.navigate("gasto")
                 }
             )
@@ -153,7 +172,9 @@ fun AppNavigation() {
                     tipoActual = "Reembolso"
                     categoriaActual = categoria
 
+                    idEditando = null
                     gastoViewModel.limpiarFormulario()
+
                     navController.navigate("gasto")
                 }
             )
@@ -165,49 +186,77 @@ fun AppNavigation() {
                 categoria = categoriaActual,
                 proyecto = proyectoState.proyectoSeleccionado,
                 esReembolso = tipoActual == "Reembolso",
+                esEdicion = idEditando != null,
+
                 buscarProveedor = { rut ->
                     proveedores[normalizarRut(rut)]
                 },
-                onVolver = { volver() },
+
+                onVolver = {
+                    if (idEditando != null) {
+                        idEditando = null
+                    }
+                    volver()
+                },
+
                 onConfirmar = { estado ->
 
                     val rutNormalizado =
                         normalizarRut(estado.rutEmisor)
 
-                    val proveedorExistente =
-                        proveedores[rutNormalizado]
-
                     val nombreProveedor =
-                        proveedorExistente
+                        proveedores[rutNormalizado]
                             ?: estado.nombreProveedor.trim()
 
-                    if (proveedorExistente == null) {
-                        proveedores[rutNormalizado] =
-                            nombreProveedor
-                    }
-
-                    gastos.add(
-                        GastoRegistrado(
-                            proyecto =
-                                proyectoState.proyectoSeleccionado,
-                            tipoRendicion = tipoActual,
-                            categoria = categoriaActual,
-                            documento =
-                                "${estado.tipoDocumento} " +
-                                        estado.numeroDocumento,
-                            rutProveedor = rutNormalizado,
-                            proveedor = nombreProveedor,
-                            monto = estado.monto.toDoubleOrNull()
-                                ?: 0.0,
-                            motivo = estado.motivoReembolso
-                        )
+                    val datosConfirmados = estado.copy(
+                        rutEmisor = rutNormalizado,
+                        nombreProveedor = nombreProveedor,
+                        errorTipoDocumento = null,
+                        errorNumeroDocumento = null,
+                        errorRutEmisor = null,
+                        errorNombreProveedor = null,
+                        errorFechaDocumento = null,
+                        errorMonto = null,
+                        errorMotivoReembolso = null
                     )
 
-                    navController.navigate("resumen") {
-                        popUpTo("gasto") {
-                            inclusive = true
+                    val idActual = idEditando
+
+                    if (idActual == null) {
+
+                        // REGISTRAR NUEVO GASTO
+                        gastos.add(
+                            GastoRegistrado(
+                                id = siguienteId,
+                                proyecto =
+                                    proyectoState.proyectoSeleccionado,
+                                tipoRendicion = tipoActual,
+                                categoria = categoriaActual,
+                                datos = datosConfirmados
+                            )
+                        )
+
+                        siguienteId++
+
+                    } else {
+
+                        // ACTUALIZAR GASTO EXISTENTE
+                        val indice = gastos.indexOfFirst {
+                            it.id == idActual
+                        }
+
+                        if (indice >= 0) {
+                            gastos[indice] = gastos[indice].copy(
+                                datos = datosConfirmados
+                            )
                         }
                     }
+
+                    // Registrar el proveedor para futuros gastos
+                    proveedores[rutNormalizado] = nombreProveedor
+
+                    idEditando = null
+                    irAlResumen()
                 }
             )
         }
@@ -225,25 +274,30 @@ fun AppNavigation() {
                 proyecto = proyectoState.proyectoSeleccionado,
                 tipo = tipoActual,
 
+                onEditar = { gasto ->
+                    idEditando = gasto.id
+                    categoriaActual = gasto.categoria
+                    tipoActual = gasto.tipoRendicion
+
+                    gastoViewModel.cargarGasto(gasto.datos)
+
+                    navController.navigate("gasto")
+                },
+
                 onEliminar = { gasto ->
-                    gastos.remove(gasto)
+                    gastos.removeAll {
+                        it.id == gasto.id
+                    }
                 },
 
                 onAgregar = {
+                    idEditando = null
                     gastoViewModel.limpiarFormulario()
 
                     if (tipoActual == "Reembolso") {
-                        navController.navigate("reembolso") {
-                            popUpTo("reembolso") {
-                                inclusive = true
-                            }
-                        }
+                        navController.navigate("reembolso")
                     } else {
-                        navController.navigate("fondorendir") {
-                            popUpTo("fondorendir") {
-                                inclusive = true
-                            }
-                        }
+                        navController.navigate("fondorendir")
                     }
                 },
 
@@ -285,6 +339,7 @@ fun AppNavigation() {
                     onClick = {
                         tipoActual = ""
                         categoriaActual = ""
+                        idEditando = null
                         gastoViewModel.limpiarFormulario()
 
                         navController.navigate("proyecto") {
@@ -307,6 +362,7 @@ private fun ResumenGastosScreen(
     gastos: List<GastoRegistrado>,
     proyecto: String,
     tipo: String,
+    onEditar: (GastoRegistrado) -> Unit,
     onEliminar: (GastoRegistrado) -> Unit,
     onAgregar: () -> Unit,
     onFinalizar: () -> Unit,
@@ -325,7 +381,9 @@ private fun ResumenGastosScreen(
         Locale("es", "CL")
     )
 
-    val total = gastos.sumOf { it.monto }
+    val total = gastos.sumOf {
+        it.datos.monto.toDoubleOrNull() ?: 0.0
+    }
 
     Column(
         modifier = Modifier
@@ -358,6 +416,9 @@ private fun ResumenGastosScreen(
 
         gastos.forEachIndexed { indice, gasto ->
 
+            val datos = gasto.datos
+            val monto = datos.monto.toDoubleOrNull() ?: 0.0
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -378,44 +439,68 @@ private fun ResumenGastosScreen(
 
                     Spacer(Modifier.height(6.dp))
 
-                    Text(gasto.documento)
+                    Text(
+                        "${datos.tipoDocumento} ${datos.numeroDocumento}"
+                    )
 
                     Text(
-                        "RUT: ${gasto.rutProveedor}",
+                        "RUT: ${datos.rutEmisor}",
                         fontSize = 13.sp
                     )
 
-                    Text(gasto.proveedor)
+                    Text(datos.nombreProveedor)
 
                     Text(
-                        "$ ${formato.format(gasto.monto)}",
+                        "Fecha: ${datos.fechaDocumento}",
+                        fontSize = 13.sp
+                    )
+
+                    Text(
+                        "$ ${formato.format(monto)}",
                         fontWeight = FontWeight.Bold,
                         color = Verde
                     )
 
-                    if (gasto.motivo.isNotBlank()) {
+                    if (datos.motivoReembolso.isNotBlank()) {
                         Spacer(Modifier.height(6.dp))
+
                         Text(
-                            "Motivo: ${gasto.motivo}",
+                            "Motivo: ${datos.motivoReembolso}",
                             fontSize = 13.sp
                         )
                     }
 
                     Spacer(Modifier.height(12.dp))
-
                     HorizontalDivider()
-
                     Spacer(Modifier.height(8.dp))
 
-                    TextButton(
-                        onClick = {
-                            gastoAEliminar = gasto
-                        }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement =
+                            Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            "Eliminar gasto",
-                            color = Color(0xFFB3261E)
-                        )
+
+                        TextButton(
+                            onClick = {
+                                onEditar(gasto)
+                            }
+                        ) {
+                            Text(
+                                "✎ Editar gasto",
+                                color = Azul
+                            )
+                        }
+
+                        TextButton(
+                            onClick = {
+                                gastoAEliminar = gasto
+                            }
+                        ) {
+                            Text(
+                                "Eliminar gasto",
+                                color = Rojo
+                            )
+                        }
                     }
                 }
             }
@@ -458,6 +543,10 @@ private fun ResumenGastosScreen(
     }
 
     gastoAEliminar?.let { gasto ->
+
+        val monto =
+            gasto.datos.monto.toDoubleOrNull() ?: 0.0
+
         AlertDialog(
             onDismissRequest = {
                 gastoAEliminar = null
@@ -469,7 +558,7 @@ private fun ResumenGastosScreen(
                 Text(
                     "¿Está seguro de eliminar el gasto " +
                             "de ${gasto.categoria} por $ " +
-                            formato.format(gasto.monto) +
+                            formato.format(monto) +
                             "? Esta acción no se puede deshacer."
                 )
             },
@@ -482,7 +571,7 @@ private fun ResumenGastosScreen(
                 ) {
                     Text(
                         "Eliminar",
-                        color = Color(0xFFB3261E)
+                        color = Rojo
                     )
                 }
             },

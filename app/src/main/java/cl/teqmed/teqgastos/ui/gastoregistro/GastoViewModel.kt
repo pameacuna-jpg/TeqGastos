@@ -70,6 +70,19 @@ class GastoViewModel : ViewModel() {
         )
     }
 
+    // NUEVO: cargar los datos de un gasto para editarlo
+    fun cargarGasto(gasto: GastoUiState) {
+        _uiState.value = gasto.copy(
+            errorTipoDocumento = null,
+            errorNumeroDocumento = null,
+            errorRutEmisor = null,
+            errorNombreProveedor = null,
+            errorFechaDocumento = null,
+            errorMonto = null,
+            errorMotivoReembolso = null
+        )
+    }
+
     // Validar formulario
     // esReembolso indica si el motivo es obligatorio
     fun validarGasto(esReembolso: Boolean = false): Boolean {
