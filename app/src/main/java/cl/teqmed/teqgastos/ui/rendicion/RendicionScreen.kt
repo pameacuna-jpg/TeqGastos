@@ -1,4 +1,3 @@
-
 package cl.teqmed.teqgastos.ui.rendicion
 
 import androidx.compose.foundation.Canvas
@@ -11,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,7 +34,8 @@ private val TextoPrincipal = Color(0xFF173E56)
 @Composable
 fun RendicionScreen(
     viewModel: RendicionViewModel,
-    onContinuar: () -> Unit
+    onContinuar: () -> Unit,
+    onVerGastosRegistrados: () -> Unit
 ) {
     val uiState = viewModel.uiState.collectAsState().value
 
@@ -144,6 +145,27 @@ fun RendicionScreen(
                 ) {
                     Text(
                         text = "Continuar",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        if (viewModel.validarTipo()) {
+                            onVerGastosRegistrados()
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "Ver gastos registrados",
+                        color = AzulTeqmed,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold
                     )

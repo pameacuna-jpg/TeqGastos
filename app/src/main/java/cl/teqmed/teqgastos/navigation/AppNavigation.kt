@@ -1,4 +1,3 @@
-
 package cl.teqmed.teqgastos.navigation
 
 import androidx.activity.compose.BackHandler
@@ -9,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -18,6 +18,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 
+import cl.teqmed.teqgastos.data.local.GastoDatabaseProvider
+import cl.teqmed.teqgastos.data.local.toEntity
+import cl.teqmed.teqgastos.data.local.toUiState
+import kotlinx.coroutines.launch
 import cl.teqmed.teqgastos.ui.login.LoginScreen
 import cl.teqmed.teqgastos.ui.login.LoginViewModel
 import cl.teqmed.teqgastos.ui.proyecto.ProyectoScreen
@@ -58,6 +62,24 @@ private fun normalizarRut(rut: String): String {
 fun AppNavigation() {
 
     val navController = rememberNavController()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val dao = remember(context) {
+        GastoDatabaseProvider.obtenerDatabase(context).gastoDao()
+    }
+    val entidades by dao.obtenerTodos().collectAsState(initial = emptyList())
+    val gastos = entidades.map { entidad ->
+        GastoRegistrado(
+            id = entidad.id,
+            proyecto = entidad.proyecto,
+            tipoRendicion = entidad.tipoRendicion,
+            categoria = entidad.categoria,
+            datos = entidad.toUiState()
+        )
+    }
+    val proveedores = entidades.asReversed().associate { entidad ->
+        normalizarRut(entidad.rutEmisor) to entidad.nombreProveedor
+    }
 
     val loginViewModel = remember { LoginViewModel() }
     val proyectoViewModel = remember { ProyectoViewModel() }
@@ -81,18 +103,6 @@ fun AppNavigation() {
     // Si tiene un ID, estamos editando ese gasto.
     var idEditando by remember {
         mutableStateOf<Long?>(null)
-    }
-
-    var siguienteId by remember {
-        mutableLongStateOf(1L)
-    }
-
-    val gastos = remember {
-        mutableStateListOf<GastoRegistrado>()
-    }
-
-    val proveedores = remember {
-        mutableStateMapOf<String, String>()
     }
 
     fun volver() {
@@ -142,6 +152,12 @@ fun AppNavigation() {
 
                         "Reembolso" ->
                             navController.navigate("reembolso")
+                    }
+                },
+                onVerGastosRegistrados = {
+                    tipoActual = rendicionState.tipoSeleccionado
+                    if (tipoActual == "Fondo por Rendir" || tipoActual == "Reembolso") {
+                        navController.navigate("resumen")
                     }
                 }
             )
@@ -222,41 +238,22 @@ fun AppNavigation() {
 
                     val idActual = idEditando
 
-                    if (idActual == null) {
+                    val entidad = datosConfirmados.toEntity(
+                        id = idActual ?: 0L,
+                        proyecto = proyectoState.proyectoSeleccionado,
+                        tipoRendicion = tipoActual,
+                        categoria = categoriaActual
+                    )
 
-                        // REGISTRAR NUEVO GASTO
-                        gastos.add(
-                            GastoRegistrado(
-                                id = siguienteId,
-                                proyecto =
-                                    proyectoState.proyectoSeleccionado,
-                                tipoRendicion = tipoActual,
-                                categoria = categoriaActual,
-                                datos = datosConfirmados
-                            )
-                        )
-
-                        siguienteId++
-
-                    } else {
-
-                        // ACTUALIZAR GASTO EXISTENTE
-                        val indice = gastos.indexOfFirst {
-                            it.id == idActual
+                    scope.launch {
+                        if (idActual == null) {
+                            dao.insertar(entidad)
+                        } else {
+                            dao.actualizar(entidad)
                         }
-
-                        if (indice >= 0) {
-                            gastos[indice] = gastos[indice].copy(
-                                datos = datosConfirmados
-                            )
-                        }
+                        idEditando = null
+                        irAlResumen()
                     }
-
-                    // Registrar el proveedor para futuros gastos
-                    proveedores[rutNormalizado] = nombreProveedor
-
-                    idEditando = null
-                    irAlResumen()
                 }
             )
         }
@@ -285,8 +282,8 @@ fun AppNavigation() {
                 },
 
                 onEliminar = { gasto ->
-                    gastos.removeAll {
-                        it.id == gasto.id
+                    scope.launch {
+                        dao.obtenerPorId(gasto.id)?.let { dao.eliminar(it) }
                     }
                 },
 
@@ -328,8 +325,7 @@ fun AppNavigation() {
                 Spacer(Modifier.height(12.dp))
 
                 Text(
-                    "Los gastos fueron registrados " +
-                            "en esta sesión de demostración. " +
+                    "Los gastos quedaron guardados en este dispositivo. " +
                             "Aún no se han enviado a un servidor."
                 )
 
@@ -587,3 +583,4 @@ private fun ResumenGastosScreen(
         )
     }
 }
+
