@@ -793,7 +793,7 @@ private fun PantallaInicio(
     }
 }
 
-// Panel académico del supervisor. Los cambios se guardan en Room.
+// Panel académico del supervisor. Diseño corporativo TEQMED; decisiones guardadas en Room.
 @Composable
 private fun PantallaSupervisor(
     rendiciones: List<RendicionEntity>,
@@ -801,115 +801,208 @@ private fun PantallaSupervisor(
     onVolver: () -> Unit,
     onResolver: (RendicionEntity, String, String) -> Unit
 ) {
-    BackHandler { onVolver() }
-
     var seleccionada by remember { mutableStateOf<RendicionEntity?>(null) }
     var observacion by remember { mutableStateOf("") }
     var confirmarEstado by remember { mutableStateOf<String?>(null) }
 
+    fun regresar() {
+        if (seleccionada != null) {
+            seleccionada = null
+            observacion = ""
+            confirmarEstado = null
+        } else {
+            onVolver()
+        }
+    }
+    BackHandler { regresar() }
+
     val pendientes = rendiciones.filter { it.estado == "PENDIENTE_ENVIO" }
         .sortedByDescending { it.id }
+    val revisadas = rendiciones.count { it.estado == "APROBADA" || it.estado == "RECHAZADA" }
     val formato = remember { NumberFormat.getNumberInstance(Locale("es", "CL")) }
+    val textoSecundario = Color(0xFF526675)
 
     Column(
         modifier = Modifier.fillMaxSize().background(Fondo)
-            .verticalScroll(rememberScrollState()).padding(20.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
-        TextButton(onClick = {
-            if (seleccionada != null) {
-                seleccionada = null
-                observacion = ""
-            } else {
-                onVolver()
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = { regresar() }) { Text("← Volver", color = Azul) }
+            Surface(color = Color(0xFFE0F1EC), shape = RoundedCornerShape(20.dp)) {
+                Text("SUPERVISOR", color = Verde, fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp))
             }
-        }) { Text("← Volver", color = Azul) }
-
+        }
+        Spacer(Modifier.height(14.dp))
         Text(
             if (seleccionada == null) "Panel del Supervisor"
             else "Rendición N.º ${seleccionada?.id}",
-            fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Azul
+            fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Azul
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
+        Text(
+            if (seleccionada == null) "Revisión y aprobación de rendiciones"
+            else "Revisa los antecedentes antes de tomar una decisión",
+            color = textoSecundario, fontSize = 14.sp
+        )
+        Spacer(Modifier.height(24.dp))
 
         if (seleccionada == null) {
-            Text("Rendiciones pendientes: ${pendientes.size}", color = Verde)
-            Spacer(Modifier.height(20.dp))
-            if (pendientes.isEmpty()) {
-                Text("No hay rendiciones pendientes de revisión.")
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Card(
+                    modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(Modifier.padding(18.dp)) {
+                        Text("PENDIENTES", color = textoSecundario, fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(8.dp))
+                        Text("${pendientes.size}", color = Azul, fontSize = 34.sp,
+                            fontWeight = FontWeight.Bold)
+                        Text("Por revisar", color = textoSecundario, fontSize = 12.sp)
+                    }
+                }
+                Card(
+                    modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(Modifier.padding(18.dp)) {
+                        Text("REVISADAS", color = textoSecundario, fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(8.dp))
+                        Text("$revisadas", color = Verde, fontSize = 34.sp,
+                            fontWeight = FontWeight.Bold)
+                        Text("Aprobadas o rechazadas", color = textoSecundario, fontSize = 12.sp)
+                    }
+                }
             }
+            Spacer(Modifier.height(24.dp))
+            Text("Bandeja de revisión", fontSize = 19.sp,
+                fontWeight = FontWeight.Bold, color = Azul)
+            Spacer(Modifier.height(12.dp))
+
+            if (pendientes.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(28.dp),
+                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+                    ) {
+                        Text("✓", fontSize = 40.sp, color = Verde, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(10.dp))
+                        Text("¡Todo al día!", fontSize = 21.sp,
+                            fontWeight = FontWeight.Bold, color = Azul)
+                        Spacer(Modifier.height(8.dp))
+                        Text("No hay rendiciones pendientes de revisión.",
+                            color = textoSecundario, fontSize = 14.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                }
+            }
+
             pendientes.forEach { rendicion ->
                 val total = gastos.filter { it.rendicionId == rendicion.id }
                     .sumOf { it.datos.monto.toDoubleOrNull() ?: 0.0 }
                 Card(
-                    onClick = {
-                        seleccionada = rendicion
-                        observacion = ""
-                    },
+                    onClick = { seleccionada = rendicion; observacion = "" },
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White)
                 ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text("Rendición N.º ${rendicion.id}",
+                    Column(Modifier.padding(18.dp)) {
+                        Text("Rendición N.º ${rendicion.id}", fontSize = 17.sp,
                             fontWeight = FontWeight.Bold, color = Azul)
-                        Text("${rendicion.proyecto} · ${rendicion.tipoRendicion}")
-                        Text("Total: $ ${formato.format(total)}",
+                        Spacer(Modifier.height(6.dp))
+                        Text("Proyecto ${rendicion.proyecto} · ${rendicion.tipoRendicion}",
+                            color = textoSecundario, fontSize = 14.sp)
+                        Spacer(Modifier.height(10.dp))
+                        Text("Total: $ ${formato.format(total)}", fontSize = 19.sp,
                             fontWeight = FontWeight.Bold, color = Verde)
-                        Spacer(Modifier.height(8.dp))
-                        Text("Tocar para revisar", color = Azul)
+                        Spacer(Modifier.height(10.dp))
+                        HorizontalDivider(color = Color(0xFFE7EDF1))
+                        Spacer(Modifier.height(10.dp))
+                        Text("Ver detalle y revisar →", color = Azul,
+                            fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     }
                 }
             }
         } else {
             val rendicion = seleccionada!!
             val gastosRendicion = gastos.filter { it.rendicionId == rendicion.id }
-            Text("Proyecto: ${rendicion.proyecto}")
-            Text("Tipo: ${rendicion.tipoRendicion}")
-            Spacer(Modifier.height(16.dp))
-            Text("Gastos registrados", fontWeight = FontWeight.Bold, color = Azul)
-            Spacer(Modifier.height(8.dp))
+            val total = gastosRendicion.sumOf { it.datos.monto.toDoubleOrNull() ?: 0.0 }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Column(Modifier.padding(18.dp)) {
+                    Text("Datos de la rendición", color = Azul, fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(10.dp))
+                    Text("Proyecto: ${rendicion.proyecto}")
+                    Text("Tipo: ${rendicion.tipoRendicion}")
+                    Spacer(Modifier.height(10.dp))
+                    Text("Total: $ ${formato.format(total)}", color = Verde,
+                        fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            Text("Gastos registrados", fontSize = 19.sp,
+                fontWeight = FontWeight.Bold, color = Azul)
+            Spacer(Modifier.height(10.dp))
             gastosRendicion.forEach { gasto ->
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White)
                 ) {
-                    Column(Modifier.padding(14.dp)) {
-                        Text(gasto.categoria, fontWeight = FontWeight.Bold)
+                    Column(Modifier.padding(16.dp)) {
+                        Text(gasto.categoria, fontWeight = FontWeight.Bold,
+                            color = Azul, fontSize = 16.sp)
+                        Spacer(Modifier.height(6.dp))
                         Text("${gasto.datos.tipoDocumento} ${gasto.datos.numeroDocumento}")
                         Text("Proveedor: ${gasto.datos.nombreProveedor}")
                         Text("RUT: ${gasto.datos.rutEmisor}")
-                        Text("Monto: $ ${formato.format(gasto.datos.monto.toDoubleOrNull() ?: 0.0)}")
                         if (gasto.datos.motivoReembolso.isNotBlank()) {
                             Text("Motivo: ${gasto.datos.motivoReembolso}")
                         }
+                        Spacer(Modifier.height(8.dp))
+                        Text("$ ${formato.format(gasto.datos.monto.toDoubleOrNull() ?: 0.0)}",
+                            fontWeight = FontWeight.Bold, color = Verde, fontSize = 17.sp)
                     }
                 }
             }
-            val total = gastosRendicion.sumOf {
-                it.datos.monto.toDoubleOrNull() ?: 0.0
-            }
-            Text("Total: $ ${formato.format(total)}",
-                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Azul)
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = observacion,
                 onValueChange = { observacion = it },
                 label = { Text("Observación (obligatoria al rechazar)") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 2
+                modifier = Modifier.fillMaxWidth(), minLines = 2,
+                shape = RoundedCornerShape(12.dp)
             )
             Spacer(Modifier.height(16.dp))
             Button(
                 onClick = { confirmarEstado = "APROBADA" },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Verde)
-            ) { Text("Aprobar rendición") }
-            Spacer(Modifier.height(8.dp))
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Verde),
+                shape = RoundedCornerShape(12.dp)
+            ) { Text("Aprobar rendición", fontWeight = FontWeight.SemiBold) }
+            Spacer(Modifier.height(10.dp))
             OutlinedButton(
                 onClick = { confirmarEstado = "RECHAZADA" },
                 enabled = observacion.isNotBlank(),
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Rechazar rendición", color = Rojo) }
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) { Text("Rechazar rendición", color = Rojo, fontWeight = FontWeight.SemiBold) }
         }
+        Spacer(Modifier.height(24.dp))
+        Text("TEQMED · TeqGastos", modifier = Modifier.fillMaxWidth(),
+            color = textoSecundario, fontSize = 12.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 
     confirmarEstado?.let { estado ->
@@ -931,4 +1024,3 @@ private fun PantallaSupervisor(
         )
     }
 }
-
