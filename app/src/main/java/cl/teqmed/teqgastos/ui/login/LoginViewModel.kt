@@ -1,3 +1,4 @@
+
 package cl.teqmed.teqgastos.ui.login
 
 import androidx.lifecycle.ViewModel
@@ -44,7 +45,8 @@ class LoginViewModel : ViewModel() {
 
         val credencialesValidas =
             (usuario == "trabajador" && password == "1234") ||
-                    (usuario == "supervisor" && password == "1234")
+                    (usuario == "supervisor" && password == "1234") ||
+                    (usuario == "administrador" && password == "1234")
 
         if (!credencialesValidas) {
             _uiState.value = _uiState.value.copy(
@@ -66,6 +68,7 @@ class LoginViewModel : ViewModel() {
         return when (_uiState.value.usuario.trim().lowercase()) {
             "supervisor" -> "SUPERVISOR"
             "trabajador" -> "TRABAJADOR"
+            "administrador" -> "ADMINISTRADOR"
             else -> ""
         }
     }

@@ -1,6 +1,18 @@
 package cl.teqmed.teqgastos.navigation
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Intent
+import android.net.Uri
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.Alignment
+import android.widget.Toast
+import java.io.OutputStreamWriter
+import java.util.Calendar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -18,6 +30,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 
+import cl.teqmed.teqgastos.security.UsuarioInicializador
 import cl.teqmed.teqgastos.data.local.GastoDatabaseProvider
 import cl.teqmed.teqgastos.data.local.RendicionEntity
 import cl.teqmed.teqgastos.data.local.toEntity
@@ -75,6 +88,12 @@ fun AppNavigation() {
     }
     val rendicionDao = remember(context) {
         GastoDatabaseProvider.obtenerDatabase(context).rendicionDao()
+    }
+    val usuarioDao = remember(context) {
+        GastoDatabaseProvider.obtenerDatabase(context).usuarioDao()
+    }
+    LaunchedEffect(usuarioDao) {
+        UsuarioInicializador.crearAdministradorInicial(usuarioDao)
     }
     val entidades by dao.obtenerTodos().collectAsState(initial = emptyList())
     val gastos = entidades.map { entidad ->
@@ -145,10 +164,10 @@ fun AppNavigation() {
             LoginScreen(
                 viewModel = loginViewModel,
                 onLoginCorrecto = {
-                    val destino = if (loginViewModel.obtenerRol() == "SUPERVISOR") {
-                        "supervisor"
-                    } else {
-                        "inicio"
+                    val destino = when (loginViewModel.obtenerRol()) {
+                        "SUPERVISOR" -> "supervisor"
+                        "ADMINISTRADOR" -> "administrador"
+                        else -> "inicio"
                     }
                     navController.navigate(destino) {
                         popUpTo("login") { inclusive = false }
@@ -189,6 +208,28 @@ fun AppNavigation() {
                         }
                     }
                 }
+            )
+        }
+
+        composable("administrador") {
+            MenuAdministrador(
+                onUsuarios = { navController.navigate("gestion_usuarios") },
+                onFinanzas = { navController.navigate("finanzas") },
+                onSalir = { navController.popBackStack("login", inclusive = false) }
+            )
+        }
+
+        composable("gestion_usuarios") {
+            PantallaGestionUsuariosInicial(onVolver = { volver() })
+        }
+
+        composable("finanzas") {
+            val rendiciones by rendicionDao.obtenerTodas()
+                .collectAsState(initial = emptyList())
+            PantallaAdministrador(
+                rendiciones = rendiciones,
+                gastos = gastos,
+                onVolver = { volver() }
             )
         }
 
@@ -1022,5 +1063,383 @@ private fun PantallaSupervisor(
                 TextButton(onClick = { confirmarEstado = null }) { Text("Cancelar") }
             }
         )
+    }
+}
+
+// Panel de Finanzas. Las rendiciones y sus gastos se consultan desde Room.
+private fun campoCsv(valor: String): String = "\"" + valor.replace("\"", "\"\"").replace("\r", " ").replace("\n", " ") + "\""
+
+@Composable
+private fun PantallaAdministrador(
+    rendiciones: List<RendicionEntity>,
+    gastos: List<GastoRegistrado>,
+    onVolver: () -> Unit
+) {
+    val context = LocalContext.current
+    val hoy = remember { Calendar.getInstance() }
+    var mes by remember { mutableIntStateOf(hoy.get(Calendar.MONTH)) }
+    var anio by remember { mutableIntStateOf(hoy.get(Calendar.YEAR)) }
+    var estado by remember { mutableStateOf<String?>(null) }
+    var porTipo by remember { mutableStateOf(false) }
+    var proyecto by remember { mutableStateOf<String?>(null) }
+    var tipo by remember { mutableStateOf<String?>(null) }
+    var rendicionId by remember { mutableStateOf<Long?>(null) }
+    var gastoId by remember { mutableStateOf<Long?>(null) }
+    var buscar by remember { mutableStateOf("") }
+    var menuMes by remember { mutableStateOf(false) }
+    var menuAnio by remember { mutableStateOf(false) }
+    val formato = remember { NumberFormat.getNumberInstance(Locale("es", "CL")) }
+    val secundario = Color(0xFF526675)
+    val meses = listOf("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")
+    val estados = listOf(Triple("APROBADA", "Aprobados", Verde), Triple("PENDIENTE_ENVIO", "Pendientes", Azul), Triple("RECHAZADA", "Rechazados", Rojo), Triple("BORRADOR", "Borradores", secundario))
+    val tipos = listOf("Fondo por Rendir", "Reembolso", "TeqRuta")
+    fun nombreTipo(t: String): String = when(t) { "Fondo por Rendir" -> "Fondos por Rendir"; "Reembolso" -> "Reembolsos"; else -> "TeqRuta" }
+    fun nombreProyecto(c: String): String = if (c.startsWith("Proyecto ")) c else "Proyecto $c"
+    fun total(r: RendicionEntity): Double = gastos.filter { it.rendicionId == r.id }.sumOf { it.datos.monto.toDoubleOrNull() ?: 0.0 }
+    // Hasta registrar la fecha de aprobación, el período usa la fecha de cierre.
+    fun delPeriodo(r: RendicionEntity): Boolean {
+        val fecha = if ((r.fechaFinalizacion ?: 0L) > 0L) r.fechaFinalizacion!! else r.fechaCreacion
+        if (fecha <= 0L) return false
+        val cal = Calendar.getInstance().apply { timeInMillis = fecha }
+        return cal.get(Calendar.MONTH) == mes && cal.get(Calendar.YEAR) == anio
+    }
+    val delEstado = rendiciones.filter { it.estado == estado && delPeriodo(it) }
+    val proyectos = delEstado.map { it.proyecto }.distinct().sorted()
+    val seleccionadas = delEstado.filter { (proyecto == null || it.proyecto == proyecto) && (tipo == null || it.tipoRendicion == tipo) }
+    val rendicion = seleccionadas.firstOrNull { it.id == rendicionId }
+    val gasto = gastos.firstOrNull { it.id == gastoId && it.rendicionId == rendicionId }
+    fun volver() {
+        when {
+            gastoId != null -> gastoId = null
+            rendicionId != null -> rendicionId = null
+            tipo != null -> tipo = null
+            proyecto != null -> proyecto = null
+            porTipo -> porTipo = false
+            estado != null -> estado = null
+            else -> onVolver()
+        }
+    }
+    BackHandler { volver() }
+
+    // El archivo contiene una fila por gasto, no las fotografías.
+    val paraExportar = when {
+        rendicion != null -> listOf(rendicion)
+        else -> seleccionadas
+    }
+    val exportador = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { resultado ->
+        if (resultado.resultCode == android.app.Activity.RESULT_OK) {
+            val uri = resultado.data?.data
+            if (uri != null) {
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { salida ->
+                        salida.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
+                        OutputStreamWriter(salida, Charsets.UTF_8).use { writer ->
+                            val columnas = listOf("Rendicion", "Estado", "Proyecto", "Tipo rendicion", "Categoria", "Tipo documento", "Numero documento", "RUT proveedor", "Proveedor", "Fecha documento", "Monto CLP", "Motivo reembolso", "Observaciones")
+                            writer.write(columnas.joinToString(";") { campoCsv(it) } + "\r\n")
+                            paraExportar.forEach { r ->
+                                gastos.filter { it.rendicionId == r.id }.forEach { g ->
+                                    val d = g.datos
+                                    val fila = listOf(r.id.toString(), r.estado, r.proyecto, r.tipoRendicion, g.categoria, d.tipoDocumento, d.numeroDocumento, d.rutEmisor, d.nombreProveedor, d.fechaDocumento, d.monto, d.motivoReembolso, r.observaciones)
+                                    writer.write(fila.joinToString(";") { campoCsv(it) } + "\r\n")
+                                }
+                            }
+                        }
+                    } ?: error("No se pudo abrir el archivo")
+                    Toast.makeText(context, "Informe CSV guardado", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "No se pudo guardar: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+    fun exportar() {
+        val nombre = "TeqGastos_${anio}_${mes + 1}_${estado ?: "mes"}_${proyecto ?: "todos"}_${tipo ?: "todos"}.csv"
+        exportador.launch(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "text/csv"
+            putExtra(Intent.EXTRA_TITLE, nombre)
+        })
+    }
+    @Composable
+    fun Descargar(texto: String) {
+        Button(onClick = { exportar() }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Verde), shape = RoundedCornerShape(12.dp)) {
+            Text(texto)
+        }
+    }
+    @Composable
+    fun TarjetaMovimiento(titulo: String, valor: String, onClick: () -> Unit) {
+        Card(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(bottom = 9.dp), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(titulo, color = Azul, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text(valor, color = Verde, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.width(12.dp))
+                Text("›", color = Azul, fontSize = 22.sp)
+            }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().background(Fondo).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { volver() }) { Text("← Volver", color = Azul) }
+            Surface(color = Color(0xFFE0F1EC), shape = RoundedCornerShape(20.dp)) {
+                Text("FINANZAS", color = Verde, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp))
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        if (estado == null) {
+            Text("Movimientos del mes", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Azul)
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(meses[mes], color = Azul, fontWeight = FontWeight.SemiBold)
+                Text("$anio", color = Azul, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(20.dp))
+            Text("Estado", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Azul)
+            Spacer(Modifier.height(10.dp))
+            estados.forEach { (clave, titulo, color) ->
+                val cantidad = rendiciones.count { it.estado == clave && delPeriodo(it) }
+                Card(onClick = { estado = clave; porTipo = false; proyecto = null; tipo = null; rendicionId = null; gastoId = null }, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 17.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(titulo, color = color, fontWeight = FontWeight.SemiBold)
+                        Text("$cantidad rendiciones  ›", color = secundario, fontSize = 13.sp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Text("Filtrar por mes y año (opcional)", color = Azul, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.weight(1f)) {
+                    OutlinedButton(onClick = { menuMes = true }, modifier = Modifier.fillMaxWidth()) { Text(meses[mes]) }
+                    DropdownMenu(expanded = menuMes, onDismissRequest = { menuMes = false }) {
+                        meses.forEachIndexed { i, nombre -> DropdownMenuItem(text = { Text(nombre) }, onClick = { mes = i; menuMes = false }) }
+                    }
+                }
+                Box(Modifier.weight(1f)) {
+                    OutlinedButton(onClick = { menuAnio = true }, modifier = Modifier.fillMaxWidth()) { Text("$anio") }
+                    DropdownMenu(expanded = menuAnio, onDismissRequest = { menuAnio = false }) {
+                        (hoy.get(Calendar.YEAR) - 5..hoy.get(Calendar.YEAR) + 1).forEach { a -> DropdownMenuItem(text = { Text("$a") }, onClick = { anio = a; menuAnio = false }) }
+                    }
+                }
+            }
+        } else if (gasto != null) {
+            Text("Detalle del gasto", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Azul)
+            Spacer(Modifier.height(8.dp))
+            Text("${nombreProyecto(rendicion!!.proyecto)} · Rendición N.º ${rendicion.id}", color = secundario)
+            Spacer(Modifier.height(16.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.padding(18.dp)) {
+                    Text(gasto.categoria, color = Azul, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Documento: ${gasto.datos.tipoDocumento} ${gasto.datos.numeroDocumento}")
+                    Text("Proveedor: ${gasto.datos.nombreProveedor}")
+                    Text("RUT: ${gasto.datos.rutEmisor}")
+                    Text("Fecha: ${gasto.datos.fechaDocumento}")
+                    if (gasto.datos.motivoReembolso.isNotBlank()) Text("Motivo: ${gasto.datos.motivoReembolso}")
+                    Spacer(Modifier.height(10.dp))
+                    Text("$ ${formato.format(gasto.datos.monto.toDoubleOrNull() ?: 0.0)}", color = Verde, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Text("Comprobante", color = Azul, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Spacer(Modifier.height(8.dp))
+            if (gasto.datos.comprobanteUri.isBlank()) {
+                Text("Este gasto no tiene fotografía adjunta.", color = secundario)
+            } else {
+                val foto = remember(gasto.datos.comprobanteUri) {
+                    try {
+                        context.contentResolver.openInputStream(Uri.parse(gasto.datos.comprobanteUri))?.use { BitmapFactory.decodeStream(it) }?.asImageBitmap()
+                    } catch (e: Exception) { null }
+                }
+                if (foto != null) {
+                    Image(bitmap = foto, contentDescription = "Fotografía del comprobante", modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp), contentScale = ContentScale.Fit)
+                } else Text("No fue posible abrir la fotografía guardada.", color = Rojo)
+            }
+            Spacer(Modifier.height(18.dp))
+            Descargar("Descargar datos de la rendición (CSV)")
+        } else if (rendicion != null) {
+            Text("Rendición N.º ${rendicion.id}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Azul)
+            Text("${nombreProyecto(rendicion.proyecto)} · ${rendicion.tipoRendicion}", color = secundario)
+            Text("Estado: ${rendicion.estado.replace('_', ' ')}", color = Verde)
+            if (rendicion.observaciones.isNotBlank()) Text("Observaciones: ${rendicion.observaciones}")
+            Spacer(Modifier.height(18.dp))
+            gastos.filter { it.rendicionId == rendicion.id }.forEach { g ->
+                TarjetaMovimiento("${g.datos.tipoDocumento} ${g.datos.numeroDocumento}", "$ ${formato.format(g.datos.monto.toDoubleOrNull() ?: 0.0)}") { gastoId = g.id }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("Total: $ ${formato.format(total(rendicion))}", color = Azul, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(14.dp))
+            Descargar("Descargar rendición (CSV)")
+        } else if (tipo != null) {
+            Text(nombreTipo(tipo!!), color = Azul, fontWeight = FontWeight.Bold, fontSize = 23.sp)
+            Text("${meses[mes]} $anio · ${estados.first { it.first == estado }.second}", color = secundario)
+            if (proyecto != null) Text(nombreProyecto(proyecto!!), color = secundario)
+            Spacer(Modifier.height(18.dp))
+            if (tipo == "TeqRuta") {
+                Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Text("Los kilómetros provienen de TeqRuta. Aún no existe conexión o importación, por lo que no hay datos para consultar ni descargar.", modifier = Modifier.padding(18.dp), color = secundario)
+                }
+            } else {
+                if (seleccionadas.isEmpty()) Text("No hay movimientos de este tipo.", color = secundario)
+                seleccionadas.sortedByDescending { it.id }.forEach { r ->
+                    TarjetaMovimiento("${nombreProyecto(r.proyecto)} · Rendición N.º ${r.id}", "$ ${formato.format(total(r))}") { rendicionId = r.id }
+                }
+                if (seleccionadas.isNotEmpty()) {
+                    Spacer(Modifier.height(14.dp))
+                    Descargar("Descargar ${nombreTipo(tipo!!).lowercase()} (CSV)")
+                }
+            }
+        } else if (proyecto != null) {
+            Text(nombreProyecto(proyecto!!), color = Azul, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("${estados.first { it.first == estado }.second} · ${meses[mes]} $anio", color = secundario)
+            Spacer(Modifier.height(16.dp))
+            tipos.forEach { t ->
+                Text(nombreTipo(t), color = Azul, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Spacer(Modifier.height(6.dp))
+                if (t == "TeqRuta") {
+                    Text("Sin datos conectados", color = secundario)
+                } else {
+                    val rs = delEstado.filter { it.proyecto == proyecto && it.tipoRendicion == t }.sortedByDescending { it.id }
+                    if (rs.isEmpty()) Text("Sin movimientos", color = secundario)
+                    rs.forEach { r ->
+                        TarjetaMovimiento("Rendición N.º ${r.id}", "$ ${formato.format(total(r))}") { rendicionId = r.id }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+            Descargar("Descargar movimientos del proyecto (CSV)")
+        } else if (porTipo) {
+            Text("Movimientos por tipo", color = Azul, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("${estados.first { it.first == estado }.second} · ${meses[mes]} $anio", color = secundario)
+            Spacer(Modifier.height(18.dp))
+            tipos.forEach { t ->
+                val rs = delEstado.filter { it.tipoRendicion == t }
+                val valor = if (t == "TeqRuta") "Sin datos" else "$ ${formato.format(rs.sumOf { total(it) })}"
+                TarjetaMovimiento(nombreTipo(t), valor) { tipo = t }
+            }
+            Spacer(Modifier.height(14.dp))
+            if (delEstado.isNotEmpty()) Descargar("Descargar movimientos por tipo (CSV)")
+        } else {
+            Text(estados.first { it.first == estado }.second.uppercase(), color = Azul, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("${meses[mes]} $anio", color = secundario)
+            Spacer(Modifier.height(16.dp))
+            Text("Movimientos por proyecto", color = Azul, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            if (proyectos.isEmpty()) Text("No hay proyectos con movimientos en este período y estado.", color = secundario)
+            proyectos.forEach { codigo ->
+                val rs = delEstado.filter { it.proyecto == codigo }
+                val fxr = rs.filter { it.tipoRendicion == "Fondo por Rendir" }.sumOf { total(it) }
+                val reemb = rs.filter { it.tipoRendicion == "Reembolso" }.sumOf { total(it) }
+                Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(nombreProyecto(codigo), color = Azul, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                            OutlinedButton(onClick = { proyecto = codigo }, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)) { Text("VER", color = Azul) }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("FxR", color = secundario); Text("$ ${formato.format(fxr)}", color = Azul)
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Reembolsos", color = secundario); Text("$ ${formato.format(reemb)}", color = Azul)
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("TeqRuta", color = secundario); Text("Sin datos", color = secundario)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { porTipo = true }, modifier = Modifier.fillMaxWidth()) { Text("Movimientos por tipo", color = Azul) }
+            Spacer(Modifier.height(12.dp))
+            if (delEstado.isNotEmpty()) Descargar("Descargar movimientos del mes (CSV)")
+            Spacer(Modifier.height(20.dp))
+            Text("Buscar otros proyectos", color = Azul, fontWeight = FontWeight.SemiBold)
+            OutlinedTextField(value = buscar, onValueChange = { buscar = it }, label = { Text("Buscar por código") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            if (buscar.isNotBlank()) {
+                proyectos.filter { it.contains(buscar.trim(), ignoreCase = true) }.forEach { codigo ->
+                    TextButton(onClick = { proyecto = codigo; buscar = "" }) { Text(nombreProyecto(codigo), color = Azul) }
+                }
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+        Text("TEQMED · TeqGastos", modifier = Modifier.fillMaxWidth(), color = secundario, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
+}
+
+
+@Composable
+private fun MenuAdministrador(
+    onUsuarios: () -> Unit,
+    onFinanzas: () -> Unit,
+    onSalir: () -> Unit
+) {
+    BackHandler { onSalir() }
+    Column(
+        modifier = Modifier.fillMaxSize().background(Fondo)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Surface(
+            color = Azul,
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("TEQMED", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 23.sp)
+                Text("TeqGastos", color = Color.White, fontSize = 16.sp)
+            }
+        }
+        Spacer(Modifier.height(26.dp))
+        Text("Panel del Administrador", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Azul)
+        Spacer(Modifier.height(8.dp))
+        Text("Seleccione la función que desea realizar", color = Color(0xFF526675))
+        Spacer(Modifier.height(28.dp))
+        Card(
+            onClick = onUsuarios,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(Modifier.padding(20.dp)) {
+                Text("Administración de usuarios  ›", color = Azul, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(Modifier.height(8.dp))
+                Text("Crear cuentas, asignar roles y administrar permisos", color = Color(0xFF526675))
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Card(
+            onClick = onFinanzas,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(Modifier.padding(20.dp)) {
+                Text("Finanzas y movimientos  ›", color = Azul, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(Modifier.height(8.dp))
+                Text("Consultar rendiciones, filtrar y descargar informes CSV", color = Color(0xFF526675))
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+        TextButton(onClick = onSalir) { Text("Cerrar sesión", color = Azul) }
+        Spacer(Modifier.height(12.dp))
+        Text("TEQMED · TeqGastos", color = Color(0xFF526675), fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun PantallaGestionUsuariosInicial(onVolver: () -> Unit) {
+    BackHandler { onVolver() }
+    Column(
+        modifier = Modifier.fillMaxSize().background(Fondo)
+            .padding(24.dp)
+    ) {
+        TextButton(onClick = onVolver) { Text("← Volver al administrador", color = Azul) }
+        Spacer(Modifier.height(20.dp))
+        Text("Administración de usuarios", color = Azul, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(12.dp))
+        Text("Aquí incorporaremos la creación de cuentas, la asignación de roles y la activación o desactivación de usuarios.")
+        Spacer(Modifier.height(12.dp))
+        Text("Esta función aún no está habilitada.", color = Verde, fontWeight = FontWeight.SemiBold)
     }
 }
