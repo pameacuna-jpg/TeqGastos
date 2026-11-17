@@ -31,6 +31,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 
 import cl.teqmed.teqgastos.security.UsuarioInicializador
+import cl.teqmed.teqgastos.ui.usuarios.GestionUsuariosScreen
+import cl.teqmed.teqgastos.ui.usuarios.CrearUsuarioScreen
+import cl.teqmed.teqgastos.ui.usuarios.EditarUsuarioScreen
+import cl.teqmed.teqgastos.ui.usuarios.MiCuentaScreen
+import cl.teqmed.teqgastos.data.local.UsuarioEntity
+import cl.teqmed.teqgastos.security.PasswordUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import cl.teqmed.teqgastos.data.local.GastoDatabaseProvider
 import cl.teqmed.teqgastos.data.local.RendicionEntity
 import cl.teqmed.teqgastos.data.local.toEntity
@@ -163,6 +171,7 @@ fun AppNavigation() {
         composable("login") {
             LoginScreen(
                 viewModel = loginViewModel,
+                usuarioDao = usuarioDao,
                 onLoginCorrecto = {
                     val destino = when (loginViewModel.obtenerRol()) {
                         "SUPERVISOR" -> "supervisor"
@@ -181,6 +190,7 @@ fun AppNavigation() {
             PantallaInicio(
                 onNueva = { navController.navigate("proyecto") },
                 onHistorial = { navController.navigate("historial") },
+                onMiCuenta = { navController.navigate("mi_cuenta") },
                 onSalir = { navController.popBackStack() }
             )
         }
@@ -195,6 +205,7 @@ fun AppNavigation() {
                 onVolver = {
                     navController.popBackStack("login", inclusive = false)
                 },
+                onMiCuenta = { navController.navigate("mi_cuenta") },
                 onResolver = { rendicion, nuevoEstado, observacion ->
                     scope.launch {
                         val actual = rendicionDao.obtenerPorId(rendicion.id)
@@ -215,12 +226,145 @@ fun AppNavigation() {
             MenuAdministrador(
                 onUsuarios = { navController.navigate("gestion_usuarios") },
                 onFinanzas = { navController.navigate("finanzas") },
+                onMiCuenta = { navController.navigate("mi_cuenta") },
                 onSalir = { navController.popBackStack("login", inclusive = false) }
             )
         }
 
+        composable("mi_cuenta") {
+            val idSesion = loginViewModel.obtenerUsuarioId()
+            if (idSesion != null) {
+                MiCuentaScreen(
+                    usuarioId = idSesion,
+                    usuarioDao = usuarioDao,
+                    onVolver = { volver() }
+                )
+            } else {
+                LaunchedEffect(Unit) {
+                    navController.navigate("login") {
+                        popUpTo("login") { inclusive = true }
+                    }
+                }
+            }
+        }
+
         composable("gestion_usuarios") {
-            PantallaGestionUsuariosInicial(onVolver = { volver() })
+            val usuarios by usuarioDao.obtenerTodos()
+                .collectAsState(initial = emptyList())
+
+            GestionUsuariosScreen(
+                usuarios = usuarios,
+                onVolver = { volver() },
+                onCrearUsuario = { navController.navigate("crear_usuario") },
+                onCambiarEstado = { usuario ->
+                    // La cuenta inicial de administrador no se puede desactivar.
+                    if (usuario.nombreUsuario != "administrador") {
+                        scope.launch {
+                            val actual = usuarioDao.obtenerPorId(usuario.id)
+                            if (actual != null && actual.nombreUsuario != "administrador") {
+                                usuarioDao.actualizar(actual.copy(activo = !actual.activo))
+                            }
+                        }
+                    }
+                },
+                onEditarUsuario = { usuario ->
+                    navController.navigate("editar_usuario/${usuario.id}")
+                }
+            )
+        }
+
+        composable("editar_usuario/{usuarioId}") { entrada ->
+            val usuarioId = entrada.arguments
+                ?.getString("usuarioId")
+                ?.toLongOrNull()
+
+            var usuario by remember(usuarioId) {
+                mutableStateOf<UsuarioEntity?>(null)
+            }
+
+            LaunchedEffect(usuarioId) {
+                usuario = usuarioId?.let { usuarioDao.obtenerPorId(it) }
+            }
+
+            val usuarioActual = usuario
+            if (usuarioActual != null) {
+                EditarUsuarioScreen(
+                    usuario = usuarioActual,
+                    onVolver = { volver() },
+                    onGuardar = { usuarioEditado ->
+                        scope.launch {
+                            val actual = usuarioDao.obtenerPorId(usuarioEditado.id)
+                            if (actual != null) {
+                                usuarioDao.actualizar(
+                                    actual.copy(
+                                        nombre = usuarioEditado.nombre,
+                                        apellido = usuarioEditado.apellido,
+                                        correo = usuarioEditado.correo,
+                                        telefono = usuarioEditado.telefono,
+                                        rol = if (actual.nombreUsuario == "administrador") {
+                                            "ADMINISTRADOR"
+                                        } else {
+                                            usuarioEditado.rol
+                                        }
+                                    )
+                                )
+                                volver()
+                            }
+                        }
+                    }
+                )
+            } else {
+                Text("Cargando usuario...")
+            }
+        }
+
+        composable("crear_usuario") {
+            var errorGuardar by remember { mutableStateOf<String?>(null) }
+            var guardando by remember { mutableStateOf(false) }
+
+            CrearUsuarioScreen(
+                onVolver = { volver() },
+                errorExterno = errorGuardar,
+                guardando = guardando,
+                onGuardar = { datos ->
+                    if (!guardando) {
+                        guardando = true
+                        errorGuardar = null
+                        scope.launch {
+                            try {
+                                val nombreUsuario = datos.nombreUsuario.trim().lowercase(Locale.ROOT)
+                                if (usuarioDao.obtenerPorNombreUsuario(nombreUsuario) != null) {
+                                    errorGuardar = "Ese nombre de usuario ya existe. Elija otro."
+                                } else {
+                                    val hash = withContext(Dispatchers.Default) {
+                                        PasswordUtils.crearHash(datos.password)
+                                    }
+                                    usuarioDao.insertar(
+                                        UsuarioEntity(
+                                            nombre = datos.nombre,
+                                            apellido = datos.apellido,
+                                            nombreUsuario = nombreUsuario,
+                                            passwordHash = hash,
+                                            correo = datos.correo,
+                                            telefono = datos.telefono,
+                                            rol = datos.rol,
+                                            activo = true,
+                                            fechaCreacion = System.currentTimeMillis()
+                                        )
+                                    )
+                                    navController.popBackStack()
+                                }
+                            } catch (e: android.database.sqlite.SQLiteConstraintException) {
+                                errorGuardar = "Ese nombre de usuario ya existe. Elija otro."
+                            } catch (e: Exception) {
+                                errorGuardar = "No se pudo guardar el usuario. Intente nuevamente."
+                            } finally {
+                                guardando = false
+                            }
+                        }
+                    }
+                }
+            )
         }
 
         composable("finanzas") {
@@ -807,6 +951,7 @@ private fun ResumenGastosScreen(
 private fun PantallaInicio(
     onNueva: () -> Unit,
     onHistorial: () -> Unit,
+    onMiCuenta: () -> Unit,
     onSalir: () -> Unit
 ) {
     BackHandler { onSalir() }
@@ -827,6 +972,10 @@ private fun PantallaInicio(
         OutlinedButton(onClick = onHistorial, modifier = Modifier.fillMaxWidth().height(56.dp)) {
             Text("Mis rendiciones", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Verde)
         }
+        Spacer(Modifier.height(16.dp))
+        OutlinedButton(onClick = onMiCuenta, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+            Text("Mi cuenta", color = Azul)
+        }
         Spacer(Modifier.height(20.dp))
         TextButton(onClick = onSalir, modifier = Modifier.fillMaxWidth()) {
             Text("Volver al inicio de sesión", color = Azul, fontSize = 15.sp)
@@ -840,6 +989,7 @@ private fun PantallaSupervisor(
     rendiciones: List<RendicionEntity>,
     gastos: List<GastoRegistrado>,
     onVolver: () -> Unit,
+    onMiCuenta: () -> Unit,
     onResolver: (RendicionEntity, String, String) -> Unit
 ) {
     var seleccionada by remember { mutableStateOf<RendicionEntity?>(null) }
@@ -870,6 +1020,7 @@ private fun PantallaSupervisor(
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = { regresar() }) { Text("← Volver", color = Azul) }
+            TextButton(onClick = onMiCuenta) { Text("Mi cuenta", color = Azul) }
             Surface(color = Color(0xFFE0F1EC), shape = RoundedCornerShape(20.dp)) {
                 Text("SUPERVISOR", color = Verde, fontSize = 11.sp,
                     fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp))
@@ -1371,6 +1522,7 @@ private fun PantallaAdministrador(
 private fun MenuAdministrador(
     onUsuarios: () -> Unit,
     onFinanzas: () -> Unit,
+    onMiCuenta: () -> Unit,
     onSalir: () -> Unit
 ) {
     BackHandler { onSalir() }
@@ -1420,26 +1572,22 @@ private fun MenuAdministrador(
                 Text("Consultar rendiciones, filtrar y descargar informes CSV", color = Color(0xFF526675))
             }
         }
+        Spacer(Modifier.height(16.dp))
+        Card(
+            onClick = onMiCuenta,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(Modifier.padding(20.dp)) {
+                Text("Mi cuenta  ›", color = Azul, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(Modifier.height(8.dp))
+                Text("Consultar datos personales y cambiar contraseña", color = Color(0xFF526675))
+            }
+        }
         Spacer(Modifier.height(24.dp))
         TextButton(onClick = onSalir) { Text("Cerrar sesión", color = Azul) }
         Spacer(Modifier.height(12.dp))
         Text("TEQMED · TeqGastos", color = Color(0xFF526675), fontSize = 12.sp)
-    }
-}
-
-@Composable
-private fun PantallaGestionUsuariosInicial(onVolver: () -> Unit) {
-    BackHandler { onVolver() }
-    Column(
-        modifier = Modifier.fillMaxSize().background(Fondo)
-            .padding(24.dp)
-    ) {
-        TextButton(onClick = onVolver) { Text("← Volver al administrador", color = Azul) }
-        Spacer(Modifier.height(20.dp))
-        Text("Administración de usuarios", color = Azul, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
-        Text("Aquí incorporaremos la creación de cuentas, la asignación de roles y la activación o desactivación de usuarios.")
-        Spacer(Modifier.height(12.dp))
-        Text("Esta función aún no está habilitada.", color = Verde, fontWeight = FontWeight.SemiBold)
     }
 }

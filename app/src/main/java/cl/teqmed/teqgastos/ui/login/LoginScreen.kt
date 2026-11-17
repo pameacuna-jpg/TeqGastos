@@ -21,6 +21,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cl.teqmed.teqgastos.R
+import cl.teqmed.teqgastos.data.local.UsuarioDao
+import kotlinx.coroutines.launch
 
 private val AzulTeqmed = Color(0xFF08638B)
 private val VerdeTeqmed = Color(0xFF008267)
@@ -29,28 +31,23 @@ private val FondoTeqmed = Color(0xFFF5F8FA)
 @Composable
 fun LoginScreen(
     viewModel: LoginViewModel,
+    usuarioDao: UsuarioDao,
     onLoginCorrecto: () -> Unit
 ) {
     val uiState = viewModel.uiState.collectAsState().value
-
-    var mostrarPassword by remember {
-        mutableStateOf(false)
-    }
+    val scope = rememberCoroutineScope()
+    var mostrarPassword by remember { mutableStateOf(false) }
+    var comprobando by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(FondoTeqmed)
             .verticalScroll(rememberScrollState())
-            .padding(
-                horizontal = 24.dp,
-                vertical = 24.dp
-            ),
+            .padding(horizontal = 24.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-
-        // Logotipo oficial TEQMED
         Image(
             painter = painterResource(
                 id = R.drawable.teqmed_logo_brochure
@@ -62,16 +59,16 @@ fun LoginScreen(
             contentScale = ContentScale.Fit
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(Modifier.height(8.dp))
 
         Text(
-            text = "TeqGastos",
+            "TeqGastos",
             fontSize = 23.sp,
             fontWeight = FontWeight.SemiBold,
             color = VerdeTeqmed
         )
 
-        Spacer(modifier = Modifier.height(26.dp))
+        Spacer(Modifier.height(26.dp))
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -83,32 +80,28 @@ fun LoginScreen(
                 defaultElevation = 3.dp
             )
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp)
-            ) {
+            Column(Modifier.padding(20.dp)) {
 
                 Text(
-                    text = "Bienvenido",
+                    "Bienvenido",
                     fontSize = 23.sp,
                     fontWeight = FontWeight.Bold,
                     color = AzulTeqmed
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(Modifier.height(4.dp))
 
                 Text(
-                    text = "Ingresa con tu cuenta corporativa",
+                    "Ingresa con tu cuenta corporativa",
                     fontSize = 15.sp,
                     color = Color.Gray
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(Modifier.height(24.dp))
 
                 OutlinedTextField(
                     value = uiState.usuario,
-                    onValueChange = {
-                        viewModel.onUsuarioChange(it)
-                    },
+                    onValueChange = viewModel::onUsuarioChange,
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Usuario") },
                     singleLine = true,
@@ -125,22 +118,19 @@ fun LoginScreen(
                     )
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(Modifier.height(8.dp))
 
                 OutlinedTextField(
                     value = uiState.password,
-                    onValueChange = {
-                        viewModel.onPasswordChange(it)
-                    },
+                    onValueChange = viewModel::onPasswordChange,
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Contraseña") },
                     singleLine = true,
                     visualTransformation =
-                        if (mostrarPassword) {
+                        if (mostrarPassword)
                             VisualTransformation.None
-                        } else {
-                            PasswordVisualTransformation()
-                        },
+                        else
+                            PasswordVisualTransformation(),
                     trailingIcon = {
                         TextButton(
                             onClick = {
@@ -148,10 +138,8 @@ fun LoginScreen(
                             }
                         ) {
                             Text(
-                                text = if (mostrarPassword)
-                                    "Ocultar"
-                                else
-                                    "Ver",
+                                if (mostrarPassword) "Ocultar"
+                                else "Ver",
                                 color = AzulTeqmed
                             )
                         }
@@ -169,14 +157,27 @@ fun LoginScreen(
                     )
                 )
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(Modifier.height(20.dp))
 
                 Button(
                     onClick = {
-                        if (viewModel.validarLogin()) {
-                            onLoginCorrecto()
+                        if (!comprobando) {
+                            comprobando = true
+
+                            scope.launch {
+                                try {
+                                    if (
+                                        viewModel.validarLogin(usuarioDao)
+                                    ) {
+                                        onLoginCorrecto()
+                                    }
+                                } finally {
+                                    comprobando = false
+                                }
+                            }
                         }
                     },
+                    enabled = !comprobando,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
@@ -186,7 +187,10 @@ fun LoginScreen(
                     )
                 ) {
                     Text(
-                        text = "Ingresar",
+                        if (comprobando)
+                            "Comprobando..."
+                        else
+                            "Ingresar",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -194,10 +198,10 @@ fun LoginScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(Modifier.height(24.dp))
 
         Text(
-            text = "TEQMED · Soluciones que dan vida",
+            "TEQMED · Soluciones que dan vida",
             fontSize = 14.sp,
             color = Color.Gray,
             textAlign = TextAlign.Center

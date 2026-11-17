@@ -30,7 +30,9 @@ data class UsuarioEntity(
 
     val rol: String,
 
-    val activo: Boolean = true
+    val activo: Boolean = true,
+
+    // Fecha de creación de la cuenta en milisegundos.
+    // Null para usuarios existentes cuya fecha se desconoce.
+    val fechaCreacion: Long? = null
 )
-
-
