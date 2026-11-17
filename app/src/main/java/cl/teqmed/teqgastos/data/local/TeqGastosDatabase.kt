@@ -8,9 +8,11 @@ import androidx.room.RoomDatabase
     entities = [
         GastoEntity::class,
         RendicionEntity::class,
-        UsuarioEntity::class
+        UsuarioEntity::class,
+        CategoriaFxrEntity::class,
+        UsuarioCategoriaFxrEntity::class
     ],
-    version = 5,
+    version = 7,
     exportSchema = false
 )
 abstract class TeqGastosDatabase : RoomDatabase() {
@@ -20,4 +22,6 @@ abstract class TeqGastosDatabase : RoomDatabase() {
     abstract fun rendicionDao(): RendicionDao
 
     abstract fun usuarioDao(): UsuarioDao
+
+    abstract fun categoriaFxrDao(): CategoriaFxrDao
 }

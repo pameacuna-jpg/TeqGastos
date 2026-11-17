@@ -44,6 +44,7 @@ import cl.teqmed.teqgastos.data.local.RendicionEntity
 import cl.teqmed.teqgastos.data.local.toEntity
 import cl.teqmed.teqgastos.data.local.toUiState
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import cl.teqmed.teqgastos.ui.historial.HistorialRendicionesScreen
 import cl.teqmed.teqgastos.ui.historial.RendicionHistorialUi
 import cl.teqmed.teqgastos.ui.login.LoginScreen
@@ -52,6 +53,8 @@ import cl.teqmed.teqgastos.ui.proyecto.ProyectoScreen
 import cl.teqmed.teqgastos.ui.proyecto.ProyectoViewModel
 import cl.teqmed.teqgastos.ui.rendicion.RendicionScreen
 import cl.teqmed.teqgastos.ui.rendicion.RendicionViewModel
+import cl.teqmed.teqgastos.ui.categoriasfxr.CategoriasFxrScreen
+import cl.teqmed.teqgastos.ui.categoriasfxr.guardarPorcentajesFxr
 import cl.teqmed.teqgastos.ui.fondorendir.FondoRendirScreen
 import cl.teqmed.teqgastos.ui.fondorendir.FondoRendirViewModel
 import cl.teqmed.teqgastos.ui.reembolso.ReembolsoScreen
@@ -226,8 +229,18 @@ fun AppNavigation() {
             MenuAdministrador(
                 onUsuarios = { navController.navigate("gestion_usuarios") },
                 onFinanzas = { navController.navigate("finanzas") },
+                onCategoriasFxr = { navController.navigate("categorias_fxr") },
                 onMiCuenta = { navController.navigate("mi_cuenta") },
                 onSalir = { navController.popBackStack("login", inclusive = false) }
+            )
+        }
+
+        composable("categorias_fxr") {
+            CategoriasFxrScreen(
+                categoriaDao = remember(context) {
+                    GastoDatabaseProvider.obtenerDatabase(context).categoriaFxrDao()
+                },
+                onVolver = { navController.popBackStack() }
             )
         }
 
@@ -274,13 +287,10 @@ fun AppNavigation() {
         }
 
         composable("editar_usuario/{usuarioId}") { entrada ->
-            val usuarioId = entrada.arguments
-                ?.getString("usuarioId")
-                ?.toLongOrNull()
-
-            var usuario by remember(usuarioId) {
-                mutableStateOf<UsuarioEntity?>(null)
-            }
+            val usuarioId = entrada.arguments?.getString("usuarioId")?.toLongOrNull()
+            var usuario by remember(usuarioId) { mutableStateOf<UsuarioEntity?>(null) }
+            val database = remember(context) { GastoDatabaseProvider.obtenerDatabase(context) }
+            val categoriaDao = remember(database) { database.categoriaFxrDao() }
 
             LaunchedEffect(usuarioId) {
                 usuario = usuarioId?.let { usuarioDao.obtenerPorId(it) }
@@ -290,25 +300,49 @@ fun AppNavigation() {
             if (usuarioActual != null) {
                 EditarUsuarioScreen(
                     usuario = usuarioActual,
+                    categoriaDao = categoriaDao,
                     onVolver = { volver() },
-                    onGuardar = { usuarioEditado ->
+                    onGuardar = { usuarioEditado, porcentajes ->
                         scope.launch {
-                            val actual = usuarioDao.obtenerPorId(usuarioEditado.id)
-                            if (actual != null) {
-                                usuarioDao.actualizar(
-                                    actual.copy(
-                                        nombre = usuarioEditado.nombre,
-                                        apellido = usuarioEditado.apellido,
-                                        correo = usuarioEditado.correo,
-                                        telefono = usuarioEditado.telefono,
-                                        rol = if (actual.nombreUsuario == "administrador") {
-                                            "ADMINISTRADOR"
-                                        } else {
-                                            usuarioEditado.rol
+                            try {
+                                val actual = usuarioDao.obtenerPorId(usuarioEditado.id)
+                                if (actual != null) {
+                                    // Primero validar y guardar la distribución FXR.
+                                    // Si falla, no se modifican los datos del trabajador.
+                                    if (porcentajes != null) {
+                                        val guardado = guardarPorcentajesFxr(
+                                            database = database,
+                                            usuarioId = usuarioEditado.id,
+                                            porcentajes = porcentajes
+                                        )
+                                        if (!guardado) {
+                                            Toast.makeText(
+                                                context,
+                                                "No se guardó: revisa que los porcentajes sumen 100 %.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                            return@launch
                                         }
+                                    }
+                                    usuarioDao.actualizar(
+                                        actual.copy(
+                                            nombre = usuarioEditado.nombre,
+                                            apellido = usuarioEditado.apellido,
+                                            correo = usuarioEditado.correo,
+                                            telefono = usuarioEditado.telefono,
+                                            rol = if (actual.nombreUsuario == "administrador")
+                                                "ADMINISTRADOR" else usuarioEditado.rol,
+                                            montoFxrAsignado = usuarioEditado.montoFxrAsignado
+                                        )
                                     )
-                                )
-                                volver()
+                                    volver()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    "No se pudieron guardar los cambios: ${e.message}",
+                                    Toast.LENGTH_LONG
+                                ).show()
                             }
                         }
                     }
@@ -423,14 +457,25 @@ fun AppNavigation() {
         }
 
         composable("fondorendir") {
+            val usuarioId = loginViewModel.obtenerUsuarioId()
+
+            LaunchedEffect(usuarioId) {
+                val usuarioActual = usuarioId?.let { id ->
+                    usuarioDao.obtenerPorId(id)
+                }
+                fondoRendirViewModel.actualizarFondoAsignado(
+                    usuarioActual?.montoFxrAsignado ?: 0L
+                )
+            }
+
             FondoRendirScreen(
                 viewModel = fondoRendirViewModel,
                 proyecto = proyectoState.proyectoSeleccionado,
+                usuarioId = usuarioId,
                 onVolver = { volver() },
                 onIngresarGasto = {
                     tipoActual = "Fondo por Rendir"
-                    categoriaActual =
-                        fondoState.categoriaSeleccionada
+                    categoriaActual = fondoState.categoriaSeleccionada
 
                     idEditando = null
                     gastoViewModel.limpiarFormulario()
@@ -457,81 +502,142 @@ fun AppNavigation() {
         }
 
         composable("gasto") {
-            GastoScreen(
-                viewModel = gastoViewModel,
-                categoria = categoriaActual,
-                proyecto = proyectoState.proyectoSeleccionado,
-                esReembolso = tipoActual == "Reembolso",
-                esEdicion = idEditando != null,
-
-                buscarProveedor = { rut ->
-                    proveedores[normalizarRut(rut)]
-                },
-
-                onVolver = {
-                    if (idEditando != null) {
-                        idEditando = null
+            val usuarioIdGasto = loginViewModel.obtenerUsuarioId()
+            val databaseFxr = remember(context) {
+                GastoDatabaseProvider.obtenerDatabase(context)
+            }
+            // -1 = cargando o sin autorización; 0 = reembolso (sin tope FXR).
+            val topeFxr by produceState(
+                initialValue = -1,
+                usuarioIdGasto, categoriaActual, tipoActual, databaseFxr
+            ) {
+                value = -1
+                if (tipoActual == "Reembolso") {
+                    value = 0
+                } else if (tipoActual == "Fondo por Rendir" && usuarioIdGasto != null) {
+                    val usuario = usuarioDao.obtenerPorId(usuarioIdGasto)
+                    val categoria = databaseFxr.categoriaFxrDao().obtenerCategorias()
+                        .first().firstOrNull {
+                            it.activa && it.nombre == categoriaActual
+                        }
+                    val porcentaje = categoria?.let {
+                        databaseFxr.categoriaFxrDao()
+                            .obtenerPorcentaje(usuarioIdGasto, it.id)
+                    } ?: 0
+                    if (usuario != null && usuario.activo &&
+                        usuario.rol == "TRABAJADOR" && porcentaje > 0
+                    ) {
+                        value = ((usuario.montoFxrAsignado.coerceAtLeast(0L) *
+                                porcentaje) / 100L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                     }
-                    volver()
-                },
+                }
+            }
 
-                onConfirmar = { estado ->
+            if (topeFxr < 0) {
+                Column(Modifier.fillMaxSize().padding(24.dp)) {
+                    Text("Verificando categoría y autorización FXR…", color = Azul)
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = { volver() }) { Text("← Volver") }
+                }
+            } else {
+                GastoScreen(
+                    viewModel = gastoViewModel,
+                    categoria = categoriaActual,
+                    proyecto = proyectoState.proyectoSeleccionado,
+                    esReembolso = tipoActual == "Reembolso",
+                    esEdicion = idEditando != null,
+                    topeCategoria = if (tipoActual == "Fondo por Rendir") topeFxr else null,
 
-                    val rutNormalizado =
-                        normalizarRut(estado.rutEmisor)
+                    buscarProveedor = { rut ->
+                        proveedores[normalizarRut(rut)]
+                    },
 
-                    val nombreProveedor =
-                        proveedores[rutNormalizado]
-                            ?: estado.nombreProveedor.trim()
-
-                    val datosConfirmados = estado.copy(
-                        rutEmisor = rutNormalizado,
-                        nombreProveedor = nombreProveedor,
-                        errorTipoDocumento = null,
-                        errorNumeroDocumento = null,
-                        errorRutEmisor = null,
-                        errorNombreProveedor = null,
-                        errorFechaDocumento = null,
-                        errorMonto = null,
-                        errorMotivoReembolso = null
-                    )
-
-                    val idActual = idEditando
-                    val rendicionId = rendicionActualId
-                    scope.launch {
-                        if (rendicionId == null) {
-                            mensajeError = "No se encontró la rendición activa."
-                            return@launch
+                    onVolver = {
+                        if (idEditando != null) {
+                            idEditando = null
                         }
-                        val rendicion = rendicionDao.obtenerPorId(rendicionId)
-                        if (rendicion?.estado != "BORRADOR") {
-                            mensajeError = "Esta rendición está cerrada y no admite cambios."
-                            irAlResumen()
-                            return@launch
-                        }
-                        if (idActual != null) {
-                            val anterior = dao.obtenerPorId(idActual)
-                            if (anterior?.rendicionId != rendicionId) {
-                                mensajeError = "El gasto no pertenece a esta rendición."
+                        volver()
+                    },
+
+                    onConfirmar = { estado ->
+
+                        val rutNormalizado =
+                            normalizarRut(estado.rutEmisor)
+
+                        val nombreProveedor =
+                            proveedores[rutNormalizado]
+                                ?: estado.nombreProveedor.trim()
+
+                        val datosConfirmados = estado.copy(
+                            rutEmisor = rutNormalizado,
+                            nombreProveedor = nombreProveedor,
+                            errorTipoDocumento = null,
+                            errorNumeroDocumento = null,
+                            errorRutEmisor = null,
+                            errorNombreProveedor = null,
+                            errorFechaDocumento = null,
+                            errorMonto = null,
+                            errorMotivoReembolso = null
+                        )
+
+                        val idActual = idEditando
+                        val rendicionId = rendicionActualId
+                        scope.launch {
+                            if (rendicionId == null) {
+                                mensajeError = "No se encontró la rendición activa."
+                                return@launch
+                            }
+                            val rendicion = rendicionDao.obtenerPorId(rendicionId)
+                            if (rendicion?.estado != "BORRADOR") {
+                                mensajeError = "Esta rendición está cerrada y no admite cambios."
                                 irAlResumen()
                                 return@launch
                             }
+                            if (idActual != null) {
+                                val anterior = dao.obtenerPorId(idActual)
+                                if (anterior?.rendicionId != rendicionId) {
+                                    mensajeError = "El gasto no pertenece a esta rendición."
+                                    irAlResumen()
+                                    return@launch
+                                }
+                            }
+                            // Revalidar la autorización en Room justo antes de guardar.
+                            if (tipoActual == "Fondo por Rendir") {
+                                val idTrabajador = loginViewModel.obtenerUsuarioId()
+                                val usuario = idTrabajador?.let { usuarioDao.obtenerPorId(it) }
+                                val categoria = databaseFxr.categoriaFxrDao()
+                                    .obtenerCategorias().first().firstOrNull {
+                                        it.activa && it.nombre == categoriaActual
+                                    }
+                                val porcentaje = if (idTrabajador != null && categoria != null) {
+                                    databaseFxr.categoriaFxrDao()
+                                        .obtenerPorcentaje(idTrabajador, categoria.id) ?: 0
+                                } else 0
+                                if (usuario == null || !usuario.activo ||
+                                    usuario.rol != "TRABAJADOR" || porcentaje <= 0
+                                ) {
+                                    Toast.makeText(context,
+                                        "Categoría no autorizada. No se guardó el gasto.",
+                                        Toast.LENGTH_LONG).show()
+                                    return@launch
+                                }
+                            }
+                            val entidad = datosConfirmados.toEntity(
+                                id = idActual ?: 0L,
+                                proyecto = proyectoState.proyectoSeleccionado,
+                                tipoRendicion = tipoActual,
+                                categoria = categoriaActual,
+                                rendicionId = rendicionId
+                            )
+                            if (idActual == null) dao.insertar(entidad)
+                            else dao.actualizar(entidad)
+                            idEditando = null
+                            mensajeError = null
+                            irAlResumen()
                         }
-                        val entidad = datosConfirmados.toEntity(
-                            id = idActual ?: 0L,
-                            proyecto = proyectoState.proyectoSeleccionado,
-                            tipoRendicion = tipoActual,
-                            categoria = categoriaActual,
-                            rendicionId = rendicionId
-                        )
-                        if (idActual == null) dao.insertar(entidad)
-                        else dao.actualizar(entidad)
-                        idEditando = null
-                        mensajeError = null
-                        irAlResumen()
                     }
-                }
-            )
+                )
+            }
         }
 
         composable("resumen") {
@@ -1522,6 +1628,7 @@ private fun PantallaAdministrador(
 private fun MenuAdministrador(
     onUsuarios: () -> Unit,
     onFinanzas: () -> Unit,
+    onCategoriasFxr: () -> Unit,
     onMiCuenta: () -> Unit,
     onSalir: () -> Unit
 ) {
@@ -1561,6 +1668,19 @@ private fun MenuAdministrador(
         }
         Spacer(Modifier.height(16.dp))
         Card(
+            onClick = onCategoriasFxr,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(Modifier.padding(20.dp)) {
+                Text("Administración de categorías FXR  ›", color = Azul, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(Modifier.height(8.dp))
+                Text("Crear y administrar categorías del Fondo por Rendir", color = Color(0xFF526675))
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Card(
             onClick = onFinanzas,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -1591,3 +1711,4 @@ private fun MenuAdministrador(
         Text("TEQMED · TeqGastos", color = Color(0xFF526675), fontSize = 12.sp)
     }
 }
+

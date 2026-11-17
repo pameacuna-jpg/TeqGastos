@@ -63,6 +63,7 @@ fun GastoScreen(
     proyecto: String,
     esReembolso: Boolean = false,
     esEdicion: Boolean = false,
+    topeCategoria: Int? = null,
     buscarProveedor: (String) -> String? = { null },
     onVolver: () -> Unit = {},
     onConfirmar: (GastoUiState) -> Unit = {}
@@ -244,12 +245,13 @@ fun GastoScreen(
         Locale("es", "CL")
     )
 
-    val tope = when (categoria) {
-        "Estacionamiento" -> 30000
-        "Peajes" -> 50000
-        "Alimentación" -> 50000
-        "Materiales" -> 100000
-        else -> 0
+    // El tope se recibe desde la asignación FXR del trabajador, no es fijo.
+    val tope = if (esReembolso) null else topeCategoria
+    val montoIngresado = estado.monto.filter { it.isDigit() }.toLongOrNull()
+    val exceso = if (tope != null && tope > 0 && montoIngresado != null && montoIngresado > tope.toLong()) {
+        montoIngresado - tope.toLong()
+    } else {
+        null
     }
 
     Column(
@@ -324,7 +326,7 @@ fun GastoScreen(
                     fontSize = 15.sp
                 )
 
-                if (!esReembolso && tope > 0) {
+                if (!esReembolso && tope != null && tope > 0) {
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "Tope referencial: $ ${formatoMoneda.format(tope)}",
@@ -482,6 +484,23 @@ fun GastoScreen(
                         estado.errorMonto?.let { Text(it) }
                     }
                 )
+
+                if (!esReembolso && exceso != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            text = "Advertencia: este gasto supera en $ ${formatoMoneda.format(exceso)} " +
+                                    "el tope autorizado de $ ${formatoMoneda.format(tope)} " +
+                                    "para $categoria. Puedes continuar y enviarlo a revisión del supervisor.",
+                            modifier = Modifier.padding(12.dp),
+                            color = Color(0xFF8A4B00),
+                            fontSize = 14.sp
+                        )
+                    }
+                }
             }
         }
 
@@ -827,6 +846,14 @@ fun GastoScreen(
                     Text("Categoría: $categoria")
                     Text("Proveedor: ${estado.nombreProveedor}")
                     Text("Monto: $ ${estado.monto}")
+                    if (!esReembolso && exceso != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Advertencia: excede el tope de $ ${formatoMoneda.format(tope)} " +
+                                    "en $ ${formatoMoneda.format(exceso)}. Se enviará a revisión.",
+                            color = Color(0xFF8A4B00)
+                        )
+                    }
 
                     if (estado.comprobanteUri.isNotBlank()) {
                         Text("✓ Fotografía adjunta")
@@ -906,4 +933,5 @@ fun GastoScreen(
         )
     }
 }
+
 

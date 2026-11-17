@@ -34,5 +34,9 @@ data class UsuarioEntity(
 
     // Fecha de creación de la cuenta en milisegundos.
     // Null para usuarios existentes cuya fecha se desconoce.
-    val fechaCreacion: Long? = null
+    val fechaCreacion: Long? = null,
+
+    // Fondo por Rendir (FXR) asignado por Administración.
+    // Monto expresado en pesos chilenos.
+    val montoFxrAsignado: Long = 0L
 )
